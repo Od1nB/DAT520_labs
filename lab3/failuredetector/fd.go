@@ -1,6 +1,8 @@
 package failuredetector
 
-import "time"
+import (
+	"time"
+)
 
 // EvtFailureDetector represents a Eventually Perfect Failure Detector as
 // described at page 53 in:
@@ -43,7 +45,9 @@ func NewEvtFailureDetector(id int, nodeIDs []int, sr SuspectRestorer, delta time
 	suspected := make(map[int]bool)
 	alive := make(map[int]bool)
 
-	// TODO(student): perform any initialization necessary
+	for _, id := range nodeIDs {
+		alive[id] = true
+	}
 
 	return &EvtFailureDetector{
 		id:        id,
@@ -74,8 +78,12 @@ func (e *EvtFailureDetector) Start() {
 		for {
 			e.testingHook() // DO NOT REMOVE THIS LINE. A no-op when not testing.
 			select {
-			case <-e.hbIn:
-				// TODO(student): Handle incoming heartbeat
+			case hb := <-e.hbIn:
+				if hb.Request {
+					e.hbSend <- Heartbeat{e.id, hb.From, false}
+				} else {
+					e.alive[hb.From] = true
+				}
 			case <-e.timeoutSignal.C:
 				e.timeout()
 			case <-e.stop:
@@ -97,7 +105,23 @@ func (e *EvtFailureDetector) Stop() {
 
 // Internal: timeout runs e's timeout procedure.
 func (e *EvtFailureDetector) timeout() {
-	// TODO(student): Implement timeout procedure
+	var increaseDelay bool
+	for _, id := range e.nodeIDs {
+		if e.alive[id] && e.suspected[id] {
+			// This means that a process is both alive and suspected
+			increaseDelay = true
+			delete(e.suspected, id)
+			e.sr.Restore(id)
+		} else if !e.alive[id] && !e.suspected[id] {
+			e.suspected[id] = true
+			e.sr.Suspect(id)
+		}
+		e.hbSend <- Heartbeat{e.id, id, true}
+	}
+	for p := range e.alive { // this will be optimized by the compiler
+		delete(e.alive, p)
+	}
+	if increaseDelay {
+		e.delay += e.delta
+	}
 }
-
-// TODO(student): Add other unexported functions or methods if needed.
