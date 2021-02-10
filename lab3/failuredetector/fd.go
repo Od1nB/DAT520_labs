@@ -122,6 +122,8 @@ func (e *EvtFailureDetector) timeout() {
 		delete(e.alive, p)
 	}
 	if increaseDelay {
-		e.delay += e.delta
-	}
+        e.delay += e.delta
+        e.timeoutSignal.Stop()
+        e.timeoutSignal = time.NewTicker(e.delay)
+    }
 }
