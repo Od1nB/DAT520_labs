@@ -113,7 +113,7 @@ func listen(conn *net.UDPConn, failuredetector *fd.EvtFailureDetector) {
 
 		hb := fd.Heartbeat{}
 		json.Unmarshal(b[:n], &hb)
-		// fmt.Println(hb.From, hb.To)
+		fmt.Println(hb.From, hb.To)
 		failuredetector.DeliverHeartbeat(hb) // todo make real heartbeat
 		// 	u.conn.WriteTo(executeCommand(c[0], c[1]), a)
 	}
