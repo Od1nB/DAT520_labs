@@ -85,7 +85,7 @@ func main() {
 	fmt.Println("Before loop")
 	for {
 		hb := <-hbSend
-		fmt.Println(hb.From, hb.To)
+		// fmt.Println(hb.From, hb.To)
 		hbByte, err := json.Marshal(hb)
 		if err != nil {
 			continue
@@ -97,7 +97,8 @@ func main() {
 
 func subscribePrinter(sub <-chan int) {
 	for {
-		fmt.Println(<-sub)
+		fmt.Print(<-sub)
+		fmt.Println(" Leader change")
 	}
 }
 
@@ -112,7 +113,7 @@ func listen(conn *net.UDPConn, failuredetector *fd.EvtFailureDetector) {
 
 		hb := fd.Heartbeat{}
 		json.Unmarshal(b[:n], &hb)
-		fmt.Println(hb.From, hb.To)
+		// fmt.Println(hb.From, hb.To)
 		failuredetector.DeliverHeartbeat(hb) // todo make real heartbeat
 		// 	u.conn.WriteTo(executeCommand(c[0], c[1]), a)
 	}
