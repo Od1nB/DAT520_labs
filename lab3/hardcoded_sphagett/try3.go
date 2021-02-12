@@ -76,6 +76,7 @@ func main() {
 	hbSend := make(chan fd.Heartbeat)
 	leaderdetector := ld.NewMonLeaderDetector(nodeIDs)
 	failuredetector := fd.NewEvtFailureDetector(*id, nodeIDs, leaderdetector, time.Duration(*delay)*time.Millisecond, hbSend)
+	failuredetector.Start()
 
 	defer conn.Close()
 
