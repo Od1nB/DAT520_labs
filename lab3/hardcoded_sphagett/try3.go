@@ -72,17 +72,17 @@ func main() {
 	conn, err := net.ListenUDP("udp", selfAddress)
 	check(err)
 
-	fmt.Println("Before make channel and stuff")
 	hbSend := make(chan fd.Heartbeat)
 	leaderdetector := ld.NewMonLeaderDetector(nodeIDs)
 	failuredetector := fd.NewEvtFailureDetector(*id, nodeIDs, leaderdetector, time.Duration(*delay)*time.Millisecond, hbSend)
 	failuredetector.Start()
 
+	fmt.Println("Starting server: ", selfAddress, " With id: ", *id)
+
 	defer conn.Close()
 
 	go listen(conn, failuredetector)
 	go subscribePrinter(leaderdetector.Subscribe())
-	fmt.Println("Before loop")
 	for {
 		hb := <-hbSend
 		// fmt.Println(hb.From, hb.To)
@@ -104,7 +104,6 @@ func subscribePrinter(sub <-chan int) {
 
 func listen(conn *net.UDPConn, failuredetector *fd.EvtFailureDetector) {
 	b := make([]byte, 512, 512)
-	fmt.Println("listen")
 	for {
 		n, _, err := conn.ReadFromUDP(b)
 		if err != nil {
@@ -113,7 +112,7 @@ func listen(conn *net.UDPConn, failuredetector *fd.EvtFailureDetector) {
 
 		hb := fd.Heartbeat{}
 		json.Unmarshal(b[:n], &hb)
-		fmt.Println(hb.From, hb.To)
+		// fmt.Println(hb.From, hb.To)
 		failuredetector.DeliverHeartbeat(hb) // todo make real heartbeat
 		// 	u.conn.WriteTo(executeCommand(c[0], c[1]), a)
 	}
