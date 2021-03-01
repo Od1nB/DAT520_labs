@@ -1,12 +1,20 @@
 package singlepaxos
 
+
 // Proposer represents a proposer as defined by the single-decree Paxos
 // algorithm.
 type Proposer struct {
+	id int
 	crnd        Round
 	clientValue Value
-	// TODO(student): algorithm implementation
-	// Add other needed fields
+	setAcc map[int]*Acceptor
+	nrNode int
+	highestRound Round
+	highestVal Value
+	numberAcc int
+	quorum int
+	seen map[int]bool
+
 }
 
 // NewProposer returns a new single-decree Paxos proposer.
@@ -19,8 +27,18 @@ type Proposer struct {
 // The proposer's internal crnd field should initially be set to the value of
 // its id.
 func NewProposer(id int, nrOfNodes int) *Proposer {
-	// TODO(student): algorithm and distributed implementation
-	return &Proposer{}
+	return &Proposer{
+		id: id,
+		crnd: Round(id),
+		clientValue: ZeroValue,
+		setAcc: make(map[int]*Acceptor,nrOfNodes),
+		nrNode: nrOfNodes,
+		highestRound: NoRound,
+		highestVal: ZeroValue,
+		quorum: nrOfNodes/2 + 1,
+		seen: make(map[int]bool,nrOfNodes),
+
+	}
 }
 
 // Internal: handlePromise processes promise prm according to the single-decree
@@ -29,14 +47,30 @@ func NewProposer(id int, nrOfNodes int) *Proposer {
 // If handlePromise returns false as output, then acc will be a zero-valued
 // struct.
 func (p *Proposer) handlePromise(prm Promise) (acc Accept, output bool) {
-	// TODO(student): algorithm implementation
-	return Accept{From: -1, Rnd: -2, Val: "FooBar"}, true
+	if prm.Rnd == p.crnd {
+		if ok, _ := p.seen[prm.From]; !ok{
+			p.numberAcc++
+			p.seen[prm.From] = true
+		}
+		if prm.Vrnd > p.highestRound{
+			p.highestRound = prm.Vrnd
+			p.highestVal = prm.Vval
+		}
+		if p.numberAcc >= p.quorum{
+			v := ZeroValue
+			if p.highestRound == NoRound {
+				v = p.clientValue
+			} else{
+				v = p.highestVal
+			}
+			return Accept{p.id,p.crnd,v},true
+		}
+	}
+	return Accept{},false
 }
 
 // Internal: increaseCrnd increases proposer p's crnd field by the total number
 // of Paxos nodes.
 func (p *Proposer) increaseCrnd() {
-	// TODO(student): algorithm implementation
+	p.crnd+= Round(p.nrNode)
 }
-
-// TODO(student): Add any other unexported methods needed.
