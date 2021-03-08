@@ -12,8 +12,6 @@ type Acceptor struct {
 	prepareIn  chan Prepare
 	acceptIn   chan Accept
 	rnd        Round
-	vrnd       Round
-	vval       Value
 	slots      []PromiseSlot
 }
 
