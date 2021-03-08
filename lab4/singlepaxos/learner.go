@@ -3,11 +3,11 @@ package singlepaxos
 // Learner represents a learner as defined by the single-decree Paxos
 // algorithm.
 type Learner struct {
-	id int
+	id        int
 	nrOfNodes int
-	rnd Round
+	rnd       Round
 	acceptMsg map[Value]int
-	froms []bool
+	froms     []bool
 	// Add needed fields
 	// Tip: you need to keep the decided values by the Paxos nodes somewhere
 }
@@ -19,13 +19,13 @@ type Learner struct {
 //
 // nrOfNodes: The total number of Paxos nodes.
 func NewLearner(id int, nrOfNodes int) *Learner {
-	var tem = make([]bool,nrOfNodes)
+	var tem = make([]bool, nrOfNodes)
 	return &Learner{
-		id:id,
+		id:        id,
 		nrOfNodes: nrOfNodes,
 		acceptMsg: make(map[Value]int),
-		rnd: -1,
-		froms : tem,
+		rnd:       -1,
+		froms:     tem,
 	}
 }
 
@@ -42,15 +42,15 @@ func (l *Learner) handleLearn(learn Learn) (val Value, output bool) {
 		l.froms[learn.From] = true
 		l.acceptMsg[learn.Val]++
 	}
-	if l.rnd == learn.Rnd && !l.froms[learn.From]{
+	if l.rnd == learn.Rnd && !l.froms[learn.From] {
 		l.froms[learn.From] = true
 		l.acceptMsg[learn.Val]++
 	}
-	for v,i := range l.acceptMsg{
-		if i >= l.nrOfNodes/2 +1 {
+	for v, i := range l.acceptMsg {
+		if i >= l.nrOfNodes/2+1 {
 			l.froms = make([]bool, l.nrOfNodes)
 			l.acceptMsg = make(map[Value]int)
-			return v,true
+			return v, true
 		}
 	}
 	return "", false

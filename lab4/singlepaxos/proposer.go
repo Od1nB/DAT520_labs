@@ -1,20 +1,18 @@
 package singlepaxos
 
-
 // Proposer represents a proposer as defined by the single-decree Paxos
 // algorithm.
 type Proposer struct {
-	id int
-	crnd        Round
-	clientValue Value
-	setAcc map[int]*Acceptor
-	nrNode int
+	id           int
+	crnd         Round
+	clientValue  Value
+	setAcc       map[int]*Acceptor
+	nrNode       int
 	highestRound Round
-	highestVal Value
-	numberAcc int
-	quorum int
-	seen map[int]bool
-
+	highestVal   Value
+	numberAcc    int
+	quorum       int
+	seen         map[int]bool
 }
 
 // NewProposer returns a new single-decree Paxos proposer.
@@ -28,16 +26,15 @@ type Proposer struct {
 // its id.
 func NewProposer(id int, nrOfNodes int) *Proposer {
 	return &Proposer{
-		id: id,
-		crnd: Round(id),
-		clientValue: ZeroValue,
-		setAcc: make(map[int]*Acceptor,nrOfNodes),
-		nrNode: nrOfNodes,
+		id:           id,
+		crnd:         Round(id),
+		clientValue:  ZeroValue,
+		setAcc:       make(map[int]*Acceptor, nrOfNodes),
+		nrNode:       nrOfNodes,
 		highestRound: NoRound,
-		highestVal: ZeroValue,
-		quorum: nrOfNodes/2 + 1,
-		seen: make(map[int]bool,nrOfNodes),
-
+		highestVal:   ZeroValue,
+		quorum:       nrOfNodes/2 + 1,
+		seen:         make(map[int]bool, nrOfNodes),
 	}
 }
 
@@ -48,29 +45,29 @@ func NewProposer(id int, nrOfNodes int) *Proposer {
 // struct.
 func (p *Proposer) handlePromise(prm Promise) (acc Accept, output bool) {
 	if prm.Rnd == p.crnd {
-		if ok, _ := p.seen[prm.From]; !ok{
+		if ok, _ := p.seen[prm.From]; !ok {
 			p.numberAcc++
 			p.seen[prm.From] = true
 		}
-		if prm.Vrnd > p.highestRound{
+		if prm.Vrnd > p.highestRound {
 			p.highestRound = prm.Vrnd
 			p.highestVal = prm.Vval
 		}
-		if p.numberAcc >= p.quorum{
+		if p.numberAcc >= p.quorum {
 			v := ZeroValue
 			if p.highestRound == NoRound {
 				v = p.clientValue
-			} else{
+			} else {
 				v = p.highestVal
 			}
-			return Accept{p.id,p.crnd,v},true
+			return Accept{p.id, p.crnd, v}, true
 		}
 	}
-	return Accept{},false
+	return Accept{}, false
 }
 
 // Internal: increaseCrnd increases proposer p's crnd field by the total number
 // of Paxos nodes.
 func (p *Proposer) increaseCrnd() {
-	p.crnd+= Round(p.nrNode)
+	p.crnd += Round(p.nrNode)
 }
