@@ -162,10 +162,14 @@ func (p *Proposer) IncrementAllDecidedUpTo() {
 // accept messages. If handlePromise returns false as output, then accs will be
 // a nil slice.
 func (p *Proposer) handlePromise(prm Promise) (accs []Accept, output bool) {
-	// TODO(student)
-	return []Accept{
-		{From: -1, Slot: -1, Rnd: -2},
-	}, true
+	if prm.Rnd == p.crnd && p.isUnique(prm.From) {
+		p.promiseCount++
+		p.promises = append(p.promises, &prm)
+		if p.promiseCount >= p.quorum {
+			return *p.getAccepts(), true
+		}
+	}
+	return nil, false
 }
 
 // Internal: increaseCrnd increases proposer p's crnd field by the total number
@@ -224,4 +228,44 @@ func (p *Proposer) sendAccept() {
 		p.nextSlot++
 		p.acceptOut <- acc
 	}
+}
+
+// Internal: isUnique returns true if this is the first promise sent from a node for this round.
+func (p *Proposer) isUnique(from int) bool {
+	for _, promise := range p.promises {
+		if promise != nil && promise.From == from && promise.Rnd == p.crnd {
+			return false
+		}
+	}
+	return true
+}
+
+// Internal: getAccepts returns a slice of all accept messages for slots between adu and highest slot observed
+// If no promise has an accept for a slot, a no-op value is inserted in that slot. The accept messages are in
+// order of SlotID
+func (p *Proposer) getAccepts() *[]Accept {
+	accs := []Accept{}
+	promiseSlots := make(map[SlotID]PromiseSlot)
+	highestSlotID := SlotID(-1)
+	for _, prm := range p.promises {
+		if prm != nil {
+			for _, slot := range prm.Slots {
+				if slot.ID > highestSlotID {
+					highestSlotID = slot.ID
+				}
+				if val, ok := promiseSlots[slot.ID]; !ok || val.Vrnd < slot.Vrnd {
+					promiseSlots[slot.ID] = slot
+				}
+			}
+		}
+	}
+
+	for i := p.adu + 1; i <= highestSlotID; i++ {
+		if slot, ok := promiseSlots[i]; ok {
+			accs = append(accs, Accept{p.id, i, p.crnd, slot.Vval})
+		} else {
+			accs = append(accs, Accept{p.id, i, p.crnd, Value{Noop: true}})
+		}
+	}
+	return &accs
 }
