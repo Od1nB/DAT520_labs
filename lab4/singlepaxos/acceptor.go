@@ -18,8 +18,6 @@ type Acceptor struct {
 //
 // id: The id of the node running this instance of a Paxos acceptor.
 func NewAcceptor(id int) *Acceptor {
-	
-
 	return &Acceptor{
 		id: id,
 		props: make(map[int]*Proposer),
@@ -36,7 +34,6 @@ func NewAcceptor(id int) *Acceptor {
 // If handlePrepare returns false as output, then prm will be a zero-valued
 // struct.
 func (a *Acceptor) handlePrepare(prp Prepare) (prm Promise, output bool) {
-
 	if  prp.Crnd > a.rnd{
 		a.rnd = prp.Crnd
 		return Promise{prp.From,a.id,a.rnd,a.vrnd,a.vval}, true
