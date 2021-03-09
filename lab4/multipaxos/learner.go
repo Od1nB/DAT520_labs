@@ -7,9 +7,7 @@ type Learner struct {
 	nrNodes int
 	slotMap map[SlotID][]Learn
 	rnd Round
-	froms []bool
 	fromsMap map[SlotID][]bool
-	// Add needed fields
 }
 
 // NewLearner returns a new Multi-Paxos learner. It takes the
@@ -22,13 +20,11 @@ type Learner struct {
 // decidedOut: A send only channel used to send values that has been learned,
 // i.e. decided by the Paxos nodes.
 func NewLearner(id int, nrOfNodes int, decidedOut chan<- DecidedValue) *Learner {
-	bo :=  make([]bool, nrOfNodes)
 	return &Learner{
 		id: id,
 		nrNodes: nrOfNodes,
 		slotMap: make(map[SlotID][]Learn),
 		rnd: Round(-1),
-		froms: bo,
 		fromsMap: make(map[SlotID][]bool),
 	}
 }
@@ -61,15 +57,18 @@ func (l *Learner) DeliverLearn(lrn Learn) {
 func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) {
 	if l.rnd < learn.Rnd {
 		l.rnd = learn.Rnd
-		l.froms = make([]bool, l.nrNodes)
-		l.froms[learn.From] = true
 		l.slotMap = make(map[SlotID][]Learn) 
 		l.slotMap[learn.Slot] = append(l.slotMap[learn.Slot],learn)
+		l.fromsMap = make(map[SlotID][]bool)
+		l.fromsMap[learn.Slot] = make([]bool,l.nrNodes)
+		l.fromsMap[learn.Slot][learn.From] = true
 	}
-
-	if l.rnd == learn.Rnd && !l.froms[learn.From] {
-		l.froms[learn.From] = true
+	if len(l.fromsMap[learn.Slot])== 0 {
+		l.fromsMap[learn.Slot]= make([]bool, l.nrNodes)
+	}
+	if l.rnd == learn.Rnd && !l.fromsMap[learn.Slot][learn.From] {
 		l.slotMap[learn.Slot] = append(l.slotMap[learn.Slot], learn)
+		l.fromsMap[learn.Slot][learn.From]=true
 	}
 	for slt := range l.slotMap {
 		vals := make(map[Value]int)
@@ -78,8 +77,8 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 		}
 		for v,i := range vals {
 			if i >= l.nrNodes/2 +1 {
-				l.froms = make([]bool, l.nrNodes)
-				l.slotMap = make(map[SlotID][]Learn)
+				delete(l.slotMap,slt)
+				delete(l.fromsMap,slt)
 				return v,slt,true
 			}
 		}
