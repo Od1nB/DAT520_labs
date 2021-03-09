@@ -1,7 +1,14 @@
 package multipaxos
 
+
 // Learner represents a learner as defined by the Multi-Paxos algorithm.
-type Learner struct { // TODO(student): algorithm and distributed implementation
+type Learner struct { 
+	id	int
+	nrNodes int
+	slotMap map[SlotID][]Learn
+	rnd Round
+	froms []bool
+	fromsMap map[SlotID][]bool
 	// Add needed fields
 }
 
@@ -15,8 +22,15 @@ type Learner struct { // TODO(student): algorithm and distributed implementation
 // decidedOut: A send only channel used to send values that has been learned,
 // i.e. decided by the Paxos nodes.
 func NewLearner(id int, nrOfNodes int, decidedOut chan<- DecidedValue) *Learner {
-	// TODO(student): algorithm and distributed implementation
-	return &Learner{}
+	bo :=  make([]bool, nrOfNodes)
+	return &Learner{
+		id: id,
+		nrNodes: nrOfNodes,
+		slotMap: make(map[SlotID][]Learn),
+		rnd: Round(-1),
+		froms: bo,
+		fromsMap: make(map[SlotID][]bool),
+	}
 }
 
 // Start starts l's main run loop as a separate goroutine. The main run loop
@@ -45,8 +59,30 @@ func (l *Learner) DeliverLearn(lrn Learn) {
 // slot that was decided and val contain the decided value. If handleLearn
 // returns false as output, then val and sid will have their zero value.
 func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) {
-	// TODO(student): algorithm implementation
-	return Value{ClientID: "-1", ClientSeq: -1, Command: "-1"}, -1, true
-}
+	if l.rnd < learn.Rnd {
+		l.rnd = learn.Rnd
+		l.froms = make([]bool, l.nrNodes)
+		l.froms[learn.From] = true
+		l.slotMap = make(map[SlotID][]Learn) 
+		l.slotMap[learn.Slot] = append(l.slotMap[learn.Slot],learn)
+	}
 
-// TODO(student): Add any other unexported methods needed.
+	if l.rnd == learn.Rnd && !l.froms[learn.From] {
+		l.froms[learn.From] = true
+		l.slotMap[learn.Slot] = append(l.slotMap[learn.Slot], learn)
+	}
+	for slt := range l.slotMap {
+		vals := make(map[Value]int)
+		for lrs := range l.slotMap[slt] {
+			vals[l.slotMap[slt][lrs].Val]++
+		}
+		for v,i := range vals {
+			if i >= l.nrNodes/2 +1 {
+				l.froms = make([]bool, l.nrNodes)
+				l.slotMap = make(map[SlotID][]Learn)
+				return v,slt,true
+			}
+		}
+	}
+	return Value{}, 0, false
+}
