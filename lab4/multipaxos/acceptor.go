@@ -8,7 +8,7 @@ type Acceptor struct {
 	id         int
 	promiseOut chan<- Promise
 	learnOut   chan<- Learn
-	stopIn     chan bool
+	stopIn     chan struct{}
 	prepareIn  chan Prepare
 	acceptIn   chan Accept
 	rnd        Round
@@ -28,7 +28,7 @@ func NewAcceptor(id int, promiseOut chan<- Promise, learnOut chan<- Learn) *Acce
 		id:         id,
 		promiseOut: promiseOut,
 		learnOut:   learnOut,
-		stopIn:     make(chan bool),
+		stopIn:     make(chan struct{}),
 		prepareIn:  make(chan Prepare),
 		acceptIn:   make(chan Accept),
 		rnd:        NoRound,
@@ -60,7 +60,7 @@ func (a *Acceptor) Start() {
 
 // Stop stops a's main run loop.
 func (a *Acceptor) Stop() {
-	a.stopIn <- true
+	a.stopIn <- struct{}{}
 }
 
 // DeliverPrepare delivers prepare prp to acceptor a.
