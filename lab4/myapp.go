@@ -27,7 +27,7 @@ var (
 	)
 	ports = flag.Int(
 		"ports",
-		20043,
+		19000,
 		"Ports for all the servers",
 	)
 	localhost = flag.Bool(
@@ -48,12 +48,15 @@ var (
 )
 
 type message struct {
-	messageType int
-	val         interface{}
-}
-
-func newMessage(messageType int, msg interface{}) message {
-	return message{messageType: messageType, val: msg}
+	Tp int
+	// Val          interface{}
+	Value        *mp.Value
+	DecidedValue *mp.DecidedValue
+	Heartbeat    *fd.Heartbeat
+	Accept       *mp.Accept
+	Learn        *mp.Learn
+	Prepare      *mp.Prepare
+	Promise      *mp.Promise
 }
 
 func usage() {
@@ -83,7 +86,7 @@ func main() {
 			fmt.Sprint("pitter3.ux.uis.no:", *ports),
 		}
 	}
-	
+
 	addresses := [3]*net.UDPAddr{}
 	for i, addr := range hardcoded {
 		a, err := net.ResolveUDPAddr("udp", addr)
@@ -91,16 +94,17 @@ func main() {
 		addresses[i] = a
 	}
 	retryLimit := 3
+	lc := make(chan message)
 
 	if *client {
 		rand.Seed(time.Now().Unix())
-		myID := rand.Intn((1000-2)+2)
-		myport := 20000+myID
+		myID := rand.Intn((1000 - 2) + 2)
+		myport := 20000 // + myID
 		// mySend := make(chan mp.Value)
 		// myRec := make(chan mp.Value)
 		var myaddress string
 		if *localhost {
-			myaddress := fmt.Sprint("localhost:",myport)
+			myaddress := fmt.Sprint("localhost:", myport)
 			fmt.Println(myaddress)
 		}
 		// else{} make myaddress from IP
@@ -110,11 +114,20 @@ func main() {
 		conn, err := net.ListenUDP("udp", selfAddress)
 		check(err)
 
+		defer conn.Close()
+
 		//Put this on own go routine
 		//Should pause when no response have been given on a command
 		commands := make(map[int]string)
 		scanner := bufio.NewScanner(os.Stdin)
 		clientSeq := 0
+		go listen(conn, lc)
+		go func() {
+			for {
+				msg := <-lc
+				fmt.Println("Got message", msg.Value.Command)
+			}
+		}()
 		for {
 			fmt.Println("Enter a command: ")
 			scanner.Scan()
@@ -123,23 +136,21 @@ func main() {
 				// fmt.Println(text)
 				clientSeq++
 				commands[clientSeq] = text
-
-				broadcast(message{val: mp.Value{
-					ClientID: fmt.Sprint(myID),
+				m := message{Value: &mp.Value{
+					ClientID:  fmt.Sprint(myID),
 					ClientSeq: clientSeq,
-					Noop: false,
-					Command: text}},conn,addresses,retryLimit)
+					Noop:      false,
+					Command:   text}}
+				broadcast(&m, conn, addresses, retryLimit)
 
 				//Send to one or all servers
 			}
-			fmt.Println(commands)
 		}
 		//Some logic for recieving stuff
 	}
 
 	nodeIDs := []int{0, 1, 2}
 	nrNodes := len(nodeIDs)
-
 
 	selfAddress, err := net.ResolveUDPAddr("udp", hardcoded[*id])
 	check(err)
@@ -168,32 +179,39 @@ func main() {
 	acceptor := mp.NewAcceptor(*id, promiseOut, learnOut)
 	acceptor.Start()
 
+	client, _ := net.ResolveUDPAddr("udp", "localhost:20000")
+	err = send(&message{Tp: 1, DecidedValue: &mp.DecidedValue{0, mp.Value{"Hello", 0, false, "Hell is closer than you think"}}}, conn, client, 3)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(12)
+	}
 
-	lc := make(chan message)
 	go listen(conn, lc)
 	for {
 		select {
 		case msg := <-lc:
 			handleIncomming(&msg, failuredetector, acceptor, learner, proposer, decidedOut)
 		case dec := <-decidedOut:
-			client := &net.UDPAddr{} //todo real client
-			send(newMessage(1, dec), conn, client, retryLimit)
+			send(&message{Tp: 1, DecidedValue: &dec}, conn, client, retryLimit)
 		case hb := <-hbSend:
-			broadcast(newMessage(2, hb), conn, addresses, retryLimit)
+			broadcast(&message{Tp: 2, Heartbeat: &hb}, conn, addresses, retryLimit)
 		case acc := <-accOut:
-			broadcast(newMessage(3, acc), conn, addresses, retryLimit)
+			broadcast(&message{Tp: 3, Accept: &acc}, conn, addresses, retryLimit)
 		case lrn := <-learnOut:
-			broadcast(newMessage(4, lrn), conn, addresses, retryLimit)
+			broadcast(&message{Tp: 4, Learn: &lrn}, conn, addresses, retryLimit)
 		case pre := <-preOut:
-			broadcast(newMessage(5, pre), conn, addresses, retryLimit)
+			broadcast(&message{Tp: 5, Prepare: &pre}, conn, addresses, retryLimit)
 		case prm := <-promiseOut:
-			send(newMessage(6, prm), conn, addresses[prm.To], retryLimit)
+			send(&message{Tp: 6, Promise: &prm}, conn, addresses[prm.To], retryLimit)
 		}
 	}
 }
 
-func send(msg message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) error {
+func send(msg *message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) error {
 	b, err := json.Marshal(msg)
+	if msg.Tp == 1 {
+		fmt.Println(string(b))
+	}
 	if err != nil {
 		return err
 	}
@@ -205,7 +223,7 @@ func send(msg message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) error
 	return err
 }
 
-func broadcast(msg message, conn *net.UDPConn, to [3]*net.UDPAddr, retryLimit int) []error {
+func broadcast(msg *message, conn *net.UDPConn, to [3]*net.UDPAddr, retryLimit int) []error {
 	var err []error
 	for _, t := range to {
 		err = append(err, send(msg, conn, t, retryLimit))
@@ -214,42 +232,21 @@ func broadcast(msg message, conn *net.UDPConn, to [3]*net.UDPAddr, retryLimit in
 }
 
 func handleIncomming(msg *message, failuredetector *fd.EvtFailureDetector, acceptor *mp.Acceptor, learner *mp.Learner, proposer *mp.Proposer, decidedOut chan mp.DecidedValue) {
-	switch msg.messageType {
+	switch msg.Tp {
 	case 0:
-		v, ok := msg.val.(mp.Value)
-		if ok {
-			proposer.DeliverClientValue(v)
-		}
+		proposer.DeliverClientValue(*msg.Value)
 	case 1:
-		v, ok := msg.val.(mp.DecidedValue)
-		if ok {
-			decidedOut <- v
-		}
+		decidedOut <- *msg.DecidedValue
 	case 2:
-		v, ok := msg.val.(fd.Heartbeat)
-		if ok {
-			failuredetector.DeliverHeartbeat(v)
-		}
+		failuredetector.DeliverHeartbeat(*msg.Heartbeat)
 	case 3:
-		v, ok := msg.val.(mp.Accept)
-		if ok {
-			acceptor.DeliverAccept(v)
-		}
+		acceptor.DeliverAccept(*msg.Accept)
 	case 4:
-		v, ok := msg.val.(mp.Learn)
-		if ok {
-			learner.DeliverLearn(v)
-		}
+		learner.DeliverLearn(*msg.Learn)
 	case 5:
-		v, ok := msg.val.(mp.Prepare)
-		if ok {
-			acceptor.DeliverPrepare(v)
-		}
+		acceptor.DeliverPrepare(*msg.Prepare)
 	case 6:
-		v, ok := msg.val.(mp.Promise)
-		if ok {
-			proposer.DeliverPromise(v)
-		}
+		proposer.DeliverPromise(*msg.Promise)
 	}
 }
 
@@ -257,6 +254,7 @@ func listen(conn *net.UDPConn, lc chan message) {
 	b := make([]byte, 512, 512)
 	for {
 		n, _, err := conn.ReadFromUDP(b)
+		fmt.Println(n)
 		if err != nil {
 			continue
 		}
@@ -275,4 +273,3 @@ func check(err error) {
 		os.Exit(1)
 	}
 }
-
