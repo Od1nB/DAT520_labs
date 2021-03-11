@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	fd "dat520/lab3/failuredetector"
 	ld "dat520/lab3/leaderdetector"
 	mp "dat520/lab4/multipaxos"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math/rand"
 	"net"
 	"os"
 	"time"
@@ -81,15 +83,63 @@ func main() {
 			fmt.Sprint("pitter3.ux.uis.no:", *ports),
 		}
 	}
-	nodeIDs := []int{0, 1, 2}
-	nrNodes := len(nodeIDs)
-
+	
 	addresses := [3]*net.UDPAddr{}
 	for i, addr := range hardcoded {
 		a, err := net.ResolveUDPAddr("udp", addr)
 		check(err)
 		addresses[i] = a
 	}
+	retryLimit := 3
+
+	if *client {
+		rand.Seed(time.Now().Unix())
+		myID := rand.Intn((1000-2)+2)
+		myport := 20000+myID
+		// mySend := make(chan mp.Value)
+		// myRec := make(chan mp.Value)
+		var myaddress string
+		if *localhost {
+			myaddress := fmt.Sprint("localhost:",myport)
+			fmt.Println(myaddress)
+		}
+		// else{} make myaddress from IP
+
+		selfAddress, err := net.ResolveUDPAddr("udp", myaddress)
+		check(err)
+		conn, err := net.ListenUDP("udp", selfAddress)
+		check(err)
+
+		//Put this on own go routine
+		//Should pause when no response have been given on a command
+		commands := make(map[int]string)
+		scanner := bufio.NewScanner(os.Stdin)
+		clientSeq := 0
+		for {
+			fmt.Println("Enter a command: ")
+			scanner.Scan()
+			text := scanner.Text()
+			if len(text) != 0 {
+				// fmt.Println(text)
+				clientSeq++
+				commands[clientSeq] = text
+
+				broadcast(message{val: mp.Value{
+					ClientID: fmt.Sprint(myID),
+					ClientSeq: clientSeq,
+					Noop: false,
+					Command: text}},conn,addresses,retryLimit)
+
+				//Send to one or all servers
+			}
+			fmt.Println(commands)
+		}
+		//Some logic for recieving stuff
+	}
+
+	nodeIDs := []int{0, 1, 2}
+	nrNodes := len(nodeIDs)
+
 
 	selfAddress, err := net.ResolveUDPAddr("udp", hardcoded[*id])
 	check(err)
@@ -118,7 +168,6 @@ func main() {
 	acceptor := mp.NewAcceptor(*id, promiseOut, learnOut)
 	acceptor.Start()
 
-	retryLimit := 3
 
 	lc := make(chan message)
 	go listen(conn, lc)
@@ -226,3 +275,4 @@ func check(err error) {
 		os.Exit(1)
 	}
 }
+
