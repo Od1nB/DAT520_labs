@@ -32,7 +32,7 @@ var (
 	)
 	localhost = flag.Bool(
 		"localhost",
-		true,
+		false,
 		"Is running on localhost",
 	)
 	id = flag.Int(
