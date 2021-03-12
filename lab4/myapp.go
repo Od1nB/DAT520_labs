@@ -104,49 +104,47 @@ func main() {
 		// myRec := make(chan mp.Value)
 		var myaddress string
 		if *localhost {
-			myaddress := fmt.Sprint("localhost:", myport)
-			fmt.Println(myaddress)
+			myaddress = fmt.Sprint("localhost:", myport)
 		}
+		// fmt.Println(myt)
 		// else{} make myaddress from IP
 
 		selfAddress, err := net.ResolveUDPAddr("udp", myaddress)
 		check(err)
-		conn, err := net.ListenUDP("udp", selfAddress)
+		cliconn, err := net.ListenUDP("udp", selfAddress)
 		check(err)
 
-		defer conn.Close()
+		defer cliconn.Close()
 
 		//Put this on own go routine
 		//Should pause when no response have been given on a command
 		commands := make(map[int]string)
 		scanner := bufio.NewScanner(os.Stdin)
 		clientSeq := 0
-		go listen(conn, lc)
+		go listen(cliconn, lc)
 		go func() {
 			for {
 				msg := <-lc
-				fmt.Println("Got message", msg.Value.Command)
+				fmt.Println("Got message", msg)
 			}
 		}()
-		for {
-			fmt.Println("Enter a command: ")
-			scanner.Scan()
-			text := scanner.Text()
-			if len(text) != 0 {
-				// fmt.Println(text)
-				clientSeq++
-				commands[clientSeq] = text
-				m := message{Value: &mp.Value{
-					ClientID:  fmt.Sprint(myID),
-					ClientSeq: clientSeq,
-					Noop:      false,
-					Command:   text}}
-				broadcast(&m, conn, addresses, retryLimit)
-
-				//Send to one or all servers
+		// go func() {
+			for {
+				fmt.Println("Enter a command: ")
+				scanner.Scan()
+				text := scanner.Text()
+				if len(text) != 0 {
+					clientSeq++
+					commands[clientSeq] = text
+					m := message{Value: &mp.Value{
+						ClientID:  fmt.Sprint(myID),
+						ClientSeq: clientSeq,
+						Noop:      false,
+						Command:   text}}
+					broadcast(&m, cliconn, addresses, retryLimit)
+				}
 			}
-		}
-		//Some logic for recieving stuff
+		// }()
 	}
 
 	nodeIDs := []int{0, 1, 2}
@@ -210,7 +208,7 @@ func main() {
 func send(msg *message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) error {
 	b, err := json.Marshal(msg)
 	if msg.Tp == 1 {
-		fmt.Println(string(b))
+		fmt.Println(msg.DecidedValue)
 	}
 	if err != nil {
 		return err
@@ -254,7 +252,6 @@ func listen(conn *net.UDPConn, lc chan message) {
 	b := make([]byte, 512, 512)
 	for {
 		n, _, err := conn.ReadFromUDP(b)
-		fmt.Println(n)
 		if err != nil {
 			continue
 		}
