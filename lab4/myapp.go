@@ -100,7 +100,7 @@ func main() {
 		}
 		if *id == -1 {
 			host, err := os.Hostname()
-			fmt.Println(host)
+			fmt.Println(host, myID)
 			check(err)
 			host = fmt.Sprint(host, ":", *ports)
 			for i, hn := range hardcodedServers {
@@ -205,6 +205,7 @@ func main() {
 
 		// selfAddress, err := net.ResolveUDPAddr("udp", hardcodedServers[*id])
 		// check(err)
+		fmt.Println(addresses[myID], myID, addresses)
 		conn, err := net.ListenUDP("udp", addresses[myID])
 		check(err)
 
