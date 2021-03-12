@@ -73,6 +73,7 @@ func main() {
 		os.Exit(0)
 	}
 	myID := *id
+	isClient := *client
 	var hardcodedServers []string
 	var hardcodedClients []string
 	if *localhost {
@@ -108,11 +109,14 @@ func main() {
 				fmt.Println(hn)
 				if hn == host {
 					myID = i
+					break
 				}
 			}
 			for i, hn := range hardcodedClients {
 				if hn == host {
 					myID = i
+					isClient = true
+					break
 				}
 			}
 			if myID == -1 {
@@ -138,7 +142,7 @@ func main() {
 
 	decidedValues := make(map[string][]mp.DecidedValue)
 
-	if *client {
+	if isClient {
 		rand.Seed(time.Now().Unix())
 		// myport := 20000 + *id // + myID
 		// mySend := make(chan mp.Value)
