@@ -72,26 +72,59 @@ func main() {
 		flag.Usage()
 		os.Exit(0)
 	}
-	var hardcoded [3]string
+	var hardcodedServers []string
+	var hardcodedClients []string
 	if *localhost {
-		hardcoded = [3]string{
+		hardcodedServers = []string{
 			fmt.Sprint("localhost:", *ports),
 			fmt.Sprint("localhost:", *ports+1),
 			fmt.Sprint("localhost:", *ports+2),
 		}
+		hardcodedClients = []string{
+			fmt.Sprint("localhost:", *ports+3),
+			fmt.Sprint("localhost:", *ports+4),
+		}
 	} else {
-		hardcoded = [3]string{
+		hardcodedServers = []string{
 			fmt.Sprint("pitter14.ux.uis.no:", *ports),
 			fmt.Sprint("pitter16.ux.uis.no:", *ports),
 			fmt.Sprint("pitter3.ux.uis.no:", *ports),
 		}
+		hardcodedClients = []string{
+			fmt.Sprint("pitter1.ux.uis.no:", *ports),
+			fmt.Sprint("pitter11.ux.uis.no:", *ports),
+		}
+		if id == nil {
+			host, err := os.Hostname()
+			check(err)
+			host = fmt.Sprint(host, ":", *ports)
+			for i, hn := range hardcodedServers {
+				if hn == host {
+					*id = i
+				}
+			}
+			for i, hn := range hardcodedClients {
+				if hn == host {
+					*id = i
+				}
+			}
+			if id == nil {
+				os.Exit(1)
+			}
+		}
 	}
 
-	addresses := [3]*net.UDPAddr{}
-	for i, addr := range hardcoded {
+	addresses := []*net.UDPAddr{}
+	for _, addr := range hardcodedServers {
 		a, err := net.ResolveUDPAddr("udp", addr)
 		check(err)
-		addresses[i] = a
+		addresses = append(addresses, a)
+	}
+	clients := []*net.UDPAddr{}
+	for _, addr := range hardcodedClients {
+		a, err := net.ResolveUDPAddr("udp", addr)
+		check(err)
+		clients = append(clients, a)
 	}
 	retryLimit := 3
 	lc := make(chan message)
@@ -100,21 +133,23 @@ func main() {
 
 	if *client {
 		rand.Seed(time.Now().Unix())
-		myID := *id           //rand.Intn((1000 - 2) + 2)
-		myport := 20000 + *id // + myID
+		myID := *id //rand.Intn((1000 - 2) + 2)
+		// myport := 20000 + *id // + myID
 		// mySend := make(chan mp.Value)
 		// myRec := make(chan mp.Value)
-		var myaddress string
-		if *localhost {
-			myaddress = fmt.Sprint("localhost:", myport)
-		}
+		// var myaddress string
+		// if *localhost {
+		// 	myaddress = fmt.Sprint("localhost:", myport)
+		// }
 		// fmt.Println(myt)
 		// else{} make myaddress from IP
 
-		selfAddress, err := net.ResolveUDPAddr("udp", myaddress)
+		// selfAddress, err := net.ResolveUDPAddr("udp", myaddress)
+		// check(err)
+		cliconn, err := net.ListenUDP("udp", clients[*id])
 		check(err)
-		cliconn, err := net.ListenUDP("udp", selfAddress)
-		check(err)
+
+		fmt.Println("Starting client: ", clients[*id], " With id: ", *id)
 
 		defer cliconn.Close()
 
@@ -162,9 +197,9 @@ func main() {
 		nodeIDs := []int{0, 1, 2}
 		nrNodes := len(nodeIDs)
 
-		selfAddress, err := net.ResolveUDPAddr("udp", hardcoded[*id])
-		check(err)
-		conn, err := net.ListenUDP("udp", selfAddress)
+		// selfAddress, err := net.ResolveUDPAddr("udp", hardcodedServers[*id])
+		// check(err)
+		conn, err := net.ListenUDP("udp", addresses[*id])
 		check(err)
 
 		hbSend := make(chan fd.Heartbeat)
@@ -172,7 +207,7 @@ func main() {
 		failuredetector := fd.NewEvtFailureDetector(*id, nodeIDs, leaderdetector, time.Duration(*delay)*time.Millisecond, hbSend)
 		failuredetector.Start()
 
-		fmt.Println("Starting server: ", selfAddress, " With id: ", *id)
+		fmt.Println("Starting server: ", addresses[*id], " With id: ", *id)
 
 		defer conn.Close()
 		preOut := make(chan mp.Prepare)
@@ -189,8 +224,6 @@ func main() {
 		acceptor := mp.NewAcceptor(*id, promiseOut, learnOut)
 		acceptor.Start()
 
-		client, _ := net.ResolveUDPAddr("udp", "localhost:20000")
-		client2, _ := net.ResolveUDPAddr("udp", "localhost:20001")
 		// err = send(&message{Tp: 1, DecidedValue: &mp.DecidedValue{0, mp.Value{"Hello", 0, false, "Hell is closer than you think"}}}, conn, client, 3)
 		// check(err)
 		go listen(conn, lc)
@@ -214,8 +247,8 @@ func main() {
 				}
 				fmt.Println("decided out", dec)
 				proposer.IncrementAllDecidedUpTo()
-				send(&message{Tp: 1, DecidedValue: &dec}, conn, client, retryLimit)
-				send(&message{Tp: 1, DecidedValue: &dec}, conn, client2, retryLimit)
+				fmt.Println(clients)
+				broadcast(&message{Tp: 1, DecidedValue: &dec}, conn, clients, retryLimit)
 			case hb := <-hbSend:
 				// fmt.Println("hb send", hb.To)
 				send(&message{Tp: 2, Heartbeat: &hb}, conn, addresses[hb.To], retryLimit)
@@ -254,7 +287,7 @@ func send(msg *message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) erro
 	return err
 }
 
-func broadcast(msg *message, conn *net.UDPConn, to [3]*net.UDPAddr, retryLimit int) []error {
+func broadcast(msg *message, conn *net.UDPConn, to []*net.UDPAddr, retryLimit int) []error {
 	var err []error
 	for _, t := range to {
 		err = append(err, send(msg, conn, t, retryLimit))
