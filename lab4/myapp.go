@@ -96,6 +96,7 @@ func main() {
 		}
 		if id == nil {
 			host, err := os.Hostname()
+			fmt.Println(host)
 			check(err)
 			host = fmt.Sprint(host, ":", *ports)
 			for i, hn := range hardcodedServers {
