@@ -72,7 +72,7 @@ func main() {
 		flag.Usage()
 		os.Exit(0)
 	}
-	var myID int
+	myID := *id
 	var hardcodedServers []string
 	var hardcodedClients []string
 	if *localhost {
@@ -98,12 +98,14 @@ func main() {
 			fmt.Sprint("pitter1.ux.uis.no:", *ports+3),
 			fmt.Sprint("pitter11.ux.uis.no:", *ports+4),
 		}
-		if *id == -1 {
+		if myID == -1 {
 			host, err := os.Hostname()
 			fmt.Println(host, myID)
 			check(err)
 			host = fmt.Sprint(host, ":", *ports)
+			fmt.Println(host)
 			for i, hn := range hardcodedServers {
+				fmt.Println(hn)
 				if hn == host {
 					myID = i
 				}
@@ -113,11 +115,9 @@ func main() {
 					myID = i
 				}
 			}
-			if id == nil {
+			if myID == -1 {
 				os.Exit(1)
 			}
-		} else {
-			myID = *id
 		}
 	}
 
