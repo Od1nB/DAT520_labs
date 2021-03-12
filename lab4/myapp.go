@@ -72,6 +72,7 @@ func main() {
 		flag.Usage()
 		os.Exit(0)
 	}
+	var myID int
 	var hardcodedServers []string
 	var hardcodedClients []string
 	if *localhost {
@@ -83,6 +84,9 @@ func main() {
 		hardcodedClients = []string{
 			fmt.Sprint("localhost:", *ports+3),
 			fmt.Sprint("localhost:", *ports+4),
+		}
+		if *id == -1 {
+			myID = 0
 		}
 	} else {
 		hardcodedServers = []string{
@@ -101,17 +105,19 @@ func main() {
 			host = fmt.Sprint(host, ":", *ports)
 			for i, hn := range hardcodedServers {
 				if hn == host {
-					*id = i
+					myID = i
 				}
 			}
 			for i, hn := range hardcodedClients {
 				if hn == host {
-					*id = i
+					myID = i
 				}
 			}
 			if id == nil {
 				os.Exit(1)
 			}
+		} else {
+			myID = *id
 		}
 	}
 
@@ -134,7 +140,6 @@ func main() {
 
 	if *client {
 		rand.Seed(time.Now().Unix())
-		myID := *id //rand.Intn((1000 - 2) + 2)
 		// myport := 20000 + *id // + myID
 		// mySend := make(chan mp.Value)
 		// myRec := make(chan mp.Value)
@@ -147,10 +152,10 @@ func main() {
 
 		// selfAddress, err := net.ResolveUDPAddr("udp", myaddress)
 		// check(err)
-		cliconn, err := net.ListenUDP("udp", clients[*id])
+		cliconn, err := net.ListenUDP("udp", clients[myID])
 		check(err)
 
-		fmt.Println("Starting client: ", clients[*id], " With id: ", *id)
+		fmt.Println("Starting client: ", clients[myID], " With id: ", myID)
 
 		defer cliconn.Close()
 
@@ -200,29 +205,29 @@ func main() {
 
 		// selfAddress, err := net.ResolveUDPAddr("udp", hardcodedServers[*id])
 		// check(err)
-		conn, err := net.ListenUDP("udp", addresses[*id])
+		conn, err := net.ListenUDP("udp", addresses[myID])
 		check(err)
 
 		hbSend := make(chan fd.Heartbeat)
 		leaderdetector := ld.NewMonLeaderDetector(nodeIDs)
-		failuredetector := fd.NewEvtFailureDetector(*id, nodeIDs, leaderdetector, time.Duration(*delay)*time.Millisecond, hbSend)
+		failuredetector := fd.NewEvtFailureDetector(myID, nodeIDs, leaderdetector, time.Duration(*delay)*time.Millisecond, hbSend)
 		failuredetector.Start()
 
-		fmt.Println("Starting server: ", addresses[*id], " With id: ", *id)
+		fmt.Println("Starting server: ", addresses[myID], " With id: ", myID)
 
 		defer conn.Close()
 		preOut := make(chan mp.Prepare)
 		accOut := make(chan mp.Accept)
-		proposer := mp.NewProposer(*id, nrNodes, -1, leaderdetector, preOut, accOut)
+		proposer := mp.NewProposer(myID, nrNodes, -1, leaderdetector, preOut, accOut)
 		proposer.Start()
 
 		decidedOut := make(chan mp.DecidedValue, 512)
-		learner := mp.NewLearner(*id, nrNodes, decidedOut)
+		learner := mp.NewLearner(myID, nrNodes, decidedOut)
 		learner.Start()
 
 		promiseOut := make(chan mp.Promise)
 		learnOut := make(chan mp.Learn)
-		acceptor := mp.NewAcceptor(*id, promiseOut, learnOut)
+		acceptor := mp.NewAcceptor(myID, promiseOut, learnOut)
 		acceptor.Start()
 
 		// err = send(&message{Tp: 1, DecidedValue: &mp.DecidedValue{0, mp.Value{"Hello", 0, false, "Hell is closer than you think"}}}, conn, client, 3)
@@ -243,7 +248,7 @@ func main() {
 				// }
 				handleIncomming(&msg, failuredetector, leaderdetector, acceptor, learner, proposer)
 			case dec := <-decidedOut:
-				if leaderdetector.Leader() != *id {
+				if leaderdetector.Leader() != myID {
 					continue
 				}
 				fmt.Println("decided out", dec)
