@@ -91,12 +91,12 @@ func main() {
 	} else {
 		hardcodedServers = []string{
 			fmt.Sprint("pitter14.ux.uis.no:", *ports),
-			fmt.Sprint("pitter16.ux.uis.no:", *ports+1),
-			fmt.Sprint("pitter3.ux.uis.no:", *ports+2),
+			fmt.Sprint("pitter16.ux.uis.no:", *ports),
+			fmt.Sprint("pitter3.ux.uis.no:", *ports),
 		}
 		hardcodedClients = []string{
-			fmt.Sprint("pitter1.ux.uis.no:", *ports+3),
-			fmt.Sprint("pitter11.ux.uis.no:", *ports+4),
+			fmt.Sprint("pitter1.ux.uis.no:", *ports),
+			fmt.Sprint("pitter11.ux.uis.no:", *ports),
 		}
 		if myID == -1 {
 			host, err := os.Hostname()
