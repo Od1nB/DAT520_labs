@@ -3,6 +3,7 @@ package multipaxos
 import (
 	"container/list"
 	"dat520/lab3/leaderdetector"
+	"fmt"
 	"time"
 )
 
@@ -121,6 +122,7 @@ func (p *Proposer) Start() {
 				}
 				p.sendAccept()
 			case <-p.phaseOneProgressTicker.C:
+				fmt.Println("Leader check", p.id, p.leader, p.phaseOneDone)
 				if p.id == p.leader && !p.phaseOneDone {
 					p.startPhaseOne()
 				}
@@ -166,6 +168,7 @@ func (p *Proposer) handlePromise(prm Promise) (accs []Accept, output bool) {
 		p.promiseCount++
 		p.promises = append(p.promises, &prm)
 		if p.promiseCount >= p.quorum {
+			fmt.Println("Promise count", p.promiseCount, p.quorum)
 			return *p.getAccepts(), true
 		}
 	}
@@ -181,7 +184,9 @@ func (p *Proposer) increaseCrnd() {
 // Internal: startPhaseOne resets all Phase One data, increases the Proposer's
 // crnd and sends a new Prepare with Slot as the current adu.
 func (p *Proposer) startPhaseOne() {
+	fmt.Println("phase 1 try", p.crnd)
 	p.phaseOneDone = false
+	p.promiseCount = 0
 	p.promises = make([]*Promise, p.n)
 	p.increaseCrnd()
 	p.prepareOut <- Prepare{From: p.id, Slot: p.adu, Crnd: p.crnd}

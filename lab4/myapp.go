@@ -96,10 +96,12 @@ func main() {
 	retryLimit := 3
 	lc := make(chan message)
 
+	decidedValues := make(map[string][]mp.DecidedValue)
+
 	if *client {
 		rand.Seed(time.Now().Unix())
-		myID := rand.Intn((1000 - 2) + 2)
-		myport := 20000 // + myID
+		myID := *id           //rand.Intn((1000 - 2) + 2)
+		myport := 20000 + *id // + myID
 		// mySend := make(chan mp.Value)
 		// myRec := make(chan mp.Value)
 		var myaddress string
@@ -125,91 +127,122 @@ func main() {
 		go func() {
 			for {
 				msg := <-lc
-				fmt.Println("Got message", msg)
+				clientID := msg.DecidedValue.Value.ClientID
+				if arr, ok := decidedValues[clientID]; ok {
+					if len(arr) < msg.DecidedValue.Value.ClientSeq {
+						decidedValues[clientID] = append(arr, *msg.DecidedValue)
+					}
+				} else {
+					decidedValues[clientID] = []mp.DecidedValue{*msg.DecidedValue}
+				}
+				// fmt.Println("Got message", msg.DecidedValue.Value.Command)
+				// decidedValues = append(decidedValues, *msg.DecidedValue)
+				fmt.Println("Messages so far:", decidedValues)
 			}
 		}()
 		// go func() {
-			for {
-				fmt.Println("Enter a command: ")
-				scanner.Scan()
-				text := scanner.Text()
-				if len(text) != 0 {
-					clientSeq++
-					commands[clientSeq] = text
-					m := message{Value: &mp.Value{
-						ClientID:  fmt.Sprint(myID),
-						ClientSeq: clientSeq,
-						Noop:      false,
-						Command:   text}}
-					broadcast(&m, cliconn, addresses, retryLimit)
-				}
+		for {
+			fmt.Println("Enter a command: ")
+			scanner.Scan()
+			text := scanner.Text()
+			if len(text) != 0 {
+				clientSeq++
+				commands[clientSeq] = text
+				m := message{Value: &mp.Value{
+					ClientID:  fmt.Sprint(myID),
+					ClientSeq: clientSeq,
+					Noop:      false,
+					Command:   text}}
+				broadcast(&m, cliconn, addresses, retryLimit)
 			}
+		}
 		// }()
-	}
+	} else {
 
-	nodeIDs := []int{0, 1, 2}
-	nrNodes := len(nodeIDs)
+		nodeIDs := []int{0, 1, 2}
+		nrNodes := len(nodeIDs)
 
-	selfAddress, err := net.ResolveUDPAddr("udp", hardcoded[*id])
-	check(err)
-	conn, err := net.ListenUDP("udp", selfAddress)
-	check(err)
+		selfAddress, err := net.ResolveUDPAddr("udp", hardcoded[*id])
+		check(err)
+		conn, err := net.ListenUDP("udp", selfAddress)
+		check(err)
 
-	hbSend := make(chan fd.Heartbeat)
-	leaderdetector := ld.NewMonLeaderDetector(nodeIDs)
-	failuredetector := fd.NewEvtFailureDetector(*id, nodeIDs, leaderdetector, time.Duration(*delay)*time.Millisecond, hbSend)
-	failuredetector.Start()
+		hbSend := make(chan fd.Heartbeat)
+		leaderdetector := ld.NewMonLeaderDetector(nodeIDs)
+		failuredetector := fd.NewEvtFailureDetector(*id, nodeIDs, leaderdetector, time.Duration(*delay)*time.Millisecond, hbSend)
+		failuredetector.Start()
 
-	fmt.Println("Starting server: ", selfAddress, " With id: ", *id)
+		fmt.Println("Starting server: ", selfAddress, " With id: ", *id)
 
-	defer conn.Close()
-	preOut := make(chan mp.Prepare)
-	accOut := make(chan mp.Accept)
-	proposer := mp.NewProposer(*id, nrNodes, -1, leaderdetector, preOut, accOut)
-	proposer.Start()
+		defer conn.Close()
+		preOut := make(chan mp.Prepare)
+		accOut := make(chan mp.Accept)
+		proposer := mp.NewProposer(*id, nrNodes, -1, leaderdetector, preOut, accOut)
+		proposer.Start()
 
-	decidedOut := make(chan mp.DecidedValue)
-	learner := mp.NewLearner(*id, nrNodes, decidedOut)
-	learner.Start()
+		decidedOut := make(chan mp.DecidedValue, 512)
+		learner := mp.NewLearner(*id, nrNodes, decidedOut)
+		learner.Start()
 
-	promiseOut := make(chan mp.Promise)
-	learnOut := make(chan mp.Learn)
-	acceptor := mp.NewAcceptor(*id, promiseOut, learnOut)
-	acceptor.Start()
+		promiseOut := make(chan mp.Promise)
+		learnOut := make(chan mp.Learn)
+		acceptor := mp.NewAcceptor(*id, promiseOut, learnOut)
+		acceptor.Start()
 
-	client, _ := net.ResolveUDPAddr("udp", "localhost:20000")
-	err = send(&message{Tp: 1, DecidedValue: &mp.DecidedValue{0, mp.Value{"Hello", 0, false, "Hell is closer than you think"}}}, conn, client, 3)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(12)
-	}
+		client, _ := net.ResolveUDPAddr("udp", "localhost:20000")
+		client2, _ := net.ResolveUDPAddr("udp", "localhost:20001")
+		// err = send(&message{Tp: 1, DecidedValue: &mp.DecidedValue{0, mp.Value{"Hello", 0, false, "Hell is closer than you think"}}}, conn, client, 3)
+		// check(err)
+		go listen(conn, lc)
+		// go func() {
 
-	go listen(conn, lc)
-	for {
-		select {
-		case msg := <-lc:
-			handleIncomming(&msg, failuredetector, acceptor, learner, proposer, decidedOut)
-		case dec := <-decidedOut:
-			send(&message{Tp: 1, DecidedValue: &dec}, conn, client, retryLimit)
-		case hb := <-hbSend:
-			broadcast(&message{Tp: 2, Heartbeat: &hb}, conn, addresses, retryLimit)
-		case acc := <-accOut:
-			broadcast(&message{Tp: 3, Accept: &acc}, conn, addresses, retryLimit)
-		case lrn := <-learnOut:
-			broadcast(&message{Tp: 4, Learn: &lrn}, conn, addresses, retryLimit)
-		case pre := <-preOut:
-			broadcast(&message{Tp: 5, Prepare: &pre}, conn, addresses, retryLimit)
-		case prm := <-promiseOut:
-			send(&message{Tp: 6, Promise: &prm}, conn, addresses[prm.To], retryLimit)
+		// x := 0
+		for {
+			// fmt.Println(x)
+			// x++
+			// fmt.Println("Leader is", leaderdetector.Leader())
+
+			select {
+			case msg := <-lc:
+				// if msg.Tp != 2 {
+				// 	fmt.Println("msg incomming", msg)
+				// }
+				handleIncomming(&msg, failuredetector, leaderdetector, acceptor, learner, proposer)
+			case dec := <-decidedOut:
+				if leaderdetector.Leader() != *id {
+					continue
+				}
+				fmt.Println("decided out", dec)
+				proposer.IncrementAllDecidedUpTo()
+				send(&message{Tp: 1, DecidedValue: &dec}, conn, client, retryLimit)
+				send(&message{Tp: 1, DecidedValue: &dec}, conn, client2, retryLimit)
+			case hb := <-hbSend:
+				// fmt.Println("hb send", hb.To)
+				send(&message{Tp: 2, Heartbeat: &hb}, conn, addresses[hb.To], retryLimit)
+			case acc := <-accOut:
+				fmt.Println("accept out", acc)
+				broadcast(&message{Tp: 3, Accept: &acc}, conn, addresses, retryLimit)
+			case lrn := <-learnOut:
+				fmt.Println("learn out", lrn)
+				broadcast(&message{Tp: 4, Learn: &lrn}, conn, addresses, retryLimit)
+			case pre := <-preOut:
+				fmt.Println("prepare out", pre)
+				broadcast(&message{Tp: 5, Prepare: &pre}, conn, addresses, retryLimit)
+			case prm := <-promiseOut:
+				fmt.Println("promise out", prm)
+				send(&message{Tp: 6, Promise: &prm}, conn, addresses[prm.To], retryLimit)
+			}
 		}
 	}
+	// }()
+	// <-make(chan struct{})
 }
 
 func send(msg *message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) error {
 	b, err := json.Marshal(msg)
-	if msg.Tp == 1 {
-		fmt.Println(msg.DecidedValue)
-	}
+	// if msg.Tp == 1 {
+	// 	fmt.Println(msg.DecidedValue)
+	// }
 	if err != nil {
 		return err
 	}
@@ -229,12 +262,12 @@ func broadcast(msg *message, conn *net.UDPConn, to [3]*net.UDPAddr, retryLimit i
 	return err
 }
 
-func handleIncomming(msg *message, failuredetector *fd.EvtFailureDetector, acceptor *mp.Acceptor, learner *mp.Learner, proposer *mp.Proposer, decidedOut chan mp.DecidedValue) {
+func handleIncomming(msg *message, failuredetector *fd.EvtFailureDetector, leaderdetector *ld.MonLeaderDetector, acceptor *mp.Acceptor, learner *mp.Learner, proposer *mp.Proposer) {
 	switch msg.Tp {
 	case 0:
 		proposer.DeliverClientValue(*msg.Value)
-	case 1:
-		decidedOut <- *msg.DecidedValue
+	// case 1:
+	// decidedOut <- *msg.DecidedValue
 	case 2:
 		failuredetector.DeliverHeartbeat(*msg.Heartbeat)
 	case 3:
@@ -249,9 +282,10 @@ func handleIncomming(msg *message, failuredetector *fd.EvtFailureDetector, accep
 }
 
 func listen(conn *net.UDPConn, lc chan message) {
-	b := make([]byte, 512, 512)
+	b := make([]byte, 2048, 2048)
 	for {
 		n, _, err := conn.ReadFromUDP(b)
+		// fmt.Println(string(b))
 		if err != nil {
 			continue
 		}
