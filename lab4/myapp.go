@@ -206,6 +206,7 @@ func main() {
 		// selfAddress, err := net.ResolveUDPAddr("udp", hardcodedServers[*id])
 		// check(err)
 		fmt.Println(addresses[myID], myID, addresses)
+		os.Exit(0)
 		conn, err := net.ListenUDP("udp", addresses[myID])
 		check(err)
 
