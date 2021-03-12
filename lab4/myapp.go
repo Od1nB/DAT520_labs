@@ -37,7 +37,7 @@ var (
 	)
 	id = flag.Int(
 		"id",
-		0,
+		-1,
 		"Id of this process",
 	)
 	delay = flag.Int(
@@ -94,7 +94,7 @@ func main() {
 			fmt.Sprint("pitter1.ux.uis.no:", *ports+3),
 			fmt.Sprint("pitter11.ux.uis.no:", *ports+4),
 		}
-		if id == nil {
+		if *id == -1 {
 			host, err := os.Hostname()
 			fmt.Println(host)
 			check(err)
