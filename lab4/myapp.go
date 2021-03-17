@@ -260,7 +260,6 @@ func main() {
 				fmt.Println(clients)
 				broadcast(&message{Tp: 1, DecidedValue: &dec}, conn, clients, retryLimit)
 			case hb := <-hbSend:
-				// fmt.Println("hb send", hb.To)
 				send(&message{Tp: 2, Heartbeat: &hb}, conn, addresses[hb.To], retryLimit)
 			case acc := <-accOut:
 				fmt.Println("accept out", acc)

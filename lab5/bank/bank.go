@@ -86,7 +86,7 @@ func (a *Account) Process(txn Transaction) TransactionResult {
 			a.Balance -= txn.Amount
 			break
 		}
-		err = fmt.Sprintf("Not enough funds for withdrawal. Balance %d NOK - Requested %d NOK",
+		err = fmt.Sprintf("Not enough funds for withdrawal. Balance: %d NOK - Requested %d NOK",
 			a.Balance, txn.Amount)
 	default:
 		err = fmt.Sprintf("%v", txn)
