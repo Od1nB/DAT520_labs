@@ -32,7 +32,7 @@ func GetServerAddresses(version, numberOfNodes, port int) (addresses []*net.UDPA
 	case 2:
 		f = getDockerAddresses
 	}
-	for i := 1; i < numberOfNodes; i++ {
+	for i := 0; i < numberOfNodes; i++ {
 		addr, err = net.ResolveUDPAddr("udp", f(port, i))
 		if err != nil {
 			return
@@ -47,7 +47,7 @@ func getUnixAddresses(port, i int) string {
 }
 
 func getDockerAddresses(port, i int) string {
-	return fmt.Sprintf("%s%d:%d", _addressRange, i, port)
+	return fmt.Sprintf("%s%d:%d", _addressRange, i+1, port)
 }
 
 func getLocalHostAddresses(port, i int) string {
