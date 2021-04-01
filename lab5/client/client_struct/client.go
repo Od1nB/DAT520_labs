@@ -25,7 +25,6 @@ type Client struct {
 func NewClient(id string, retryLimit int, addresses []*net.UDPAddr) *Client {
 	selfAddress, err := net.ResolveUDPAddr("udp", id)
 	nt.Check(err)
-	fmt.Println(addresses, selfAddress)
 	cliconn, err := net.ListenUDP("udp", selfAddress)
 	nt.Check(err)
 	return &Client{

@@ -44,10 +44,10 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr) *Server {
 	leaderdetector := ld.NewMonLeaderDetector(nodeIDs)
 	hbSend := make(chan fd.Heartbeat)
 	decidedOut := make(chan mp.DecidedValue, 512)
-	promiseOut := make(chan mp.Promise)
-	learnOut := make(chan mp.Learn)
-	preOut := make(chan mp.Prepare)
-	accOut := make(chan mp.Accept)
+	promiseOut := make(chan mp.Promise, 512)
+	learnOut := make(chan mp.Learn, 512)
+	preOut := make(chan mp.Prepare, 512)
+	accOut := make(chan mp.Accept, 512)
 	numNodes := len(addresses)
 
 	return &Server{
@@ -65,6 +65,11 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr) *Server {
 		learner:         mp.NewLearner(id, numNodes, decidedOut),
 		acceptor:        mp.NewAcceptor(id, promiseOut, learnOut),
 		retryLimit:      retryLimit,
+		decidedOut:      decidedOut,
+		promiseOut:      promiseOut,
+		learnOut:        learnOut,
+		preOut:          preOut,
+		accOut:          accOut,
 	}
 }
 
