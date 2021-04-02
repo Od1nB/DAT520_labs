@@ -59,10 +59,16 @@ func (v Value) String() string {
 // ClientSeq: Client local sequence number.
 //
 // Command: The decided command.
+// type Response struct {
+// 	ClientID  string
+// 	ClientSeq int
+// 	Command   string
+// }
+
 type Response struct {
 	ClientID  string
 	ClientSeq int
-	Command   string
+	Command   bank.TransactionResult
 }
 
 // String returns a string representation of response r.

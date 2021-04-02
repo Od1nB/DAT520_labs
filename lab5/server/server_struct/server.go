@@ -3,6 +3,7 @@ package server_struct
 import (
 	fd "dat520/lab3/failuredetector"
 	ld "dat520/lab3/leaderdetector"
+	"dat520/lab5/bank"
 	mp "dat520/lab5/multipaxos"
 	nt "dat520/lab5/network"
 	"fmt"
@@ -31,6 +32,7 @@ type Server struct {
 	accOut          chan mp.Accept
 	retryLimit      int
 	debugLevel      int
+	accounts		map[int]bank.Account
 }
 
 func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, debug int) *Server {
@@ -48,6 +50,9 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, debug int) *
 	preOut := make(chan mp.Prepare, 512)
 	accOut := make(chan mp.Accept, 512)
 	numNodes := len(addresses)
+	accs := make(map[int]bank.Account)
+	accs[0] = bank.Account{0,300}
+	accs[1] = bank.Account{1,200}
 
 	return &Server{
 		id:              id,
@@ -70,6 +75,7 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, debug int) *
 		preOut:          preOut,
 		accOut:          accOut,
 		debugLevel:      debug,
+		accounts: 		accs,	
 	}
 }
 
@@ -91,11 +97,18 @@ func (s *Server) serverLoop() {
 			// debug messages are handled in s.handleIncomming
 			s.handleIncomming(&msg)
 		case dec := <-s.decidedOut:
+			temp := s.accounts[dec.Value.AccountNum]
+			results := temp.Process(dec.Value.Txn)
+			fmt.Println(results)
+			s.accounts[dec.Value.AccountNum] = temp
+			fmt.Println(s.accounts)
 			if s.leaderdetector.Leader() != s.id {
 				continue
 			}
 			s.debug(1, "Sending decided value:", dec, "to", s.clients[dec.Value.ClientID])
 			s.proposer.IncrementAllDecidedUpTo()
+			// Change to -> handleDecideValue(&dec)
+
 			nt.Send(&nt.Message{Tp: 1, DecidedValue: &dec}, s.conn, s.clients[dec.Value.ClientID], s.retryLimit)
 		case hb := <-s.hbSend:
 			s.debug(3, "Sending heartbeat:", hb, "to", s.servers[hb.To])
@@ -139,6 +152,14 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 		s.proposer.DeliverPromise(*msg.Promise)
 	}
 }
+
+// func (s *Server) handleDecideValue(val mp.DecidedValue){
+// 	s.proposer.
+	// if val.SlotID > adu+1{
+	
+	// }
+// }
+
 
 func (s *Server) registerClient(id string) {
 	if _, ok := s.clients[id]; !ok {

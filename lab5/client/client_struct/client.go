@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 )
 
 type Client struct {
@@ -53,14 +55,39 @@ func (c *Client) StartClientLoop() {
 		text := c.getUserInput()
 		if len(text) != 0 {
 			c.seq++
+			splitted := strings.Split(text," ")
+		
+			accNum, err := strconv.Atoi(splitted[0])
+			if err != nil{
+				fmt.Println("Account Number can only be numbers!")
+				continue
+			}
+			sendOperation := bank.Transaction{}
+			if strings.Contains(splitted[1],"Balance"){
+				sendOperation = bank.Transaction{Op: bank.Balance}
+			} else if strings.Contains(splitted[1],"Deposit") {
+				amount, err := strconv.Atoi(splitted[2])
+				if err != nil{
+					fmt.Println("Amount can only be numbers!")
+					continue
+				}
+				sendOperation = bank.Transaction{Op: bank.Deposit, Amount: amount }
+			} else if strings.Contains(splitted[1],"Withdrawal") {
+				amount, err := strconv.Atoi(splitted[2])
+				if err != nil{
+					fmt.Println("Amount can only be numbers!")
+					continue
+				}
+				sendOperation = bank.Transaction{Op: bank.Withdrawal, Amount: amount }
+			} else{
+				fmt.Println("Operation can only be: Balance, Deposit or Withdrawal")
+			}
 			v := &mp.Value{
 				ClientID:   c.id,
 				ClientSeq:  c.seq,
 				Noop:       false,
-				AccountNum: 0,
-				Txn: bank.Transaction{
-					Op:     bank.Deposit,
-					Amount: 100 + c.seq},
+				AccountNum: accNum,
+				Txn: sendOperation,
 			}
 			c.commands[c.seq] = *v
 			m := nt.Message{Value: v}
@@ -73,7 +100,7 @@ func (c *Client) StartClientLoop() {
 }
 
 func (c *Client) getUserInput() string {
-	fmt.Println("Enter a command: ")
+	fmt.Println("Enter your Account number, Transaction Type and Amount separated by space: ")
 	c.scanner.Scan()
 	text := c.scanner.Text()
 	return text
