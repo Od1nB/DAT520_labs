@@ -8,6 +8,6 @@ COPY . /go/src/app
 WORKDIR /go/src/app
 
 #Build and install your application inside the container.
-RUN go install -v ./lab5/client/client.go
+RUN go install -v ./lab5/client/app.go
 
-ENTRYPOINT ["/go/bin/client"]
+ENTRYPOINT ["/go/bin/app"]

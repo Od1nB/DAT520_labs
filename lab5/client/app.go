@@ -46,6 +46,11 @@ var (
 		0,
 		"0 for localhost, 1 for uis unix and 2 for docker.",
 	)
+	debug = flag.Int(
+		"debug",
+		0,
+		"Debug level. Default is 0. 1 for info, 2 for all messages.",
+	)
 )
 
 func usage() {
@@ -66,7 +71,7 @@ func main() {
 	clientID := fmt.Sprintf("%s:%d", *ip, myport)
 	addresses, err := nt.GetServerAddresses(*version, *numNodes, *ports)
 	nt.Check(err)
-	c := client.NewClient(clientID, *retryLimit, addresses)
+	c := client.NewClient(clientID, *retryLimit, addresses, *debug)
 
 	c.StartClientLoop()
 }

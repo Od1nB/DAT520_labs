@@ -44,6 +44,11 @@ var (
 		1000,
 		"Delay used by Increasing Timout failuredetector in milliseconds",
 	)
+	debug = flag.Int(
+		"debug",
+		0,
+		"Debug level. Default is 0. 1 for info, 2 for all paxos messages except heartbeat, 3 for all messages.",
+	)
 )
 
 func usage() {
@@ -61,6 +66,6 @@ func main() {
 	}
 	addresses, err := nt.GetServerAddresses(*version, *numNodes, *ports)
 	nt.Check(err)
-	s := server.NewServer(*id, *delay, *retryLimit, addresses)
+	s := server.NewServer(*id, *delay, *retryLimit, addresses, *debug)
 	s.StartServerLoop()
 }

@@ -39,7 +39,6 @@ func Send(msg *Message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) erro
 
 func Broadcast(msg *Message, conn *net.UDPConn, to []*net.UDPAddr, retryLimit int) []error {
 	var err []error
-	fmt.Println("Broadcast", msg, to)
 	for _, t := range to {
 		err = append(err, Send(msg, conn, t, retryLimit))
 	}

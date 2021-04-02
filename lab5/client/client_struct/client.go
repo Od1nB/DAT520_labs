@@ -20,9 +20,10 @@ type Client struct {
 	commands      map[int]mp.Value
 	lc            chan nt.Message
 	retryLimit    int
+	debugLevel    int
 }
 
-func NewClient(id string, retryLimit int, addresses []*net.UDPAddr) *Client {
+func NewClient(id string, retryLimit int, addresses []*net.UDPAddr, debug int) *Client {
 	selfAddress, err := net.ResolveUDPAddr("udp", id)
 	nt.Check(err)
 	cliconn, err := net.ListenUDP("udp", selfAddress)
@@ -37,11 +38,12 @@ func NewClient(id string, retryLimit int, addresses []*net.UDPAddr) *Client {
 		commands:      make(map[int]mp.Value),
 		lc:            make(chan nt.Message),
 		retryLimit:    retryLimit,
+		debugLevel:    debug,
 	}
 }
 
 func (c *Client) StartClientLoop() {
-	fmt.Println("Starting client: ", c.id)
+	c.debug(1, "Starting client: ", c.id)
 
 	defer c.conn.Close()
 
@@ -89,4 +91,10 @@ func (c *Client) handleResponse() {
 		c.decidedValues[clientID] = []mp.DecidedValue{*msg.DecidedValue}
 	}
 	fmt.Println("Messages so far:", c.decidedValues)
+}
+
+func (c *Client) debug(level int, messages ...interface{}) {
+	if level >= c.debugLevel {
+		fmt.Println(messages...)
+	}
 }

@@ -11,6 +11,6 @@ COPY . /go/src/app
 WORKDIR /go/src/app
 
 #Build and install your application inside the container.
-RUN go install -v ./lab5/server/server.go
+RUN go install -v ./lab5/server/app.go
 
-ENTRYPOINT ["/go/bin/server"]
+ENTRYPOINT ["/go/bin/app"]
