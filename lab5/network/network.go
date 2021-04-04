@@ -19,6 +19,7 @@ type Message struct {
 	Learn        *mp.Learn
 	Prepare      *mp.Prepare
 	Promise      *mp.Promise
+	Response     *mp.Response
 }
 
 func Send(msg *Message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) error {

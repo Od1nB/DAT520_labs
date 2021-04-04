@@ -58,23 +58,18 @@ func (v Value) String() string {
 //
 // ClientSeq: Client local sequence number.
 //
-// Command: The decided command.
-// type Response struct {
-// 	ClientID  string
-// 	ClientSeq int
-// 	Command   string
-// }
+// TxnRes: The result of the decided transaction.
 
 type Response struct {
 	ClientID  string
 	ClientSeq int
-	Command   bank.TransactionResult
+	TxnRes    bank.TransactionResult
 }
 
 // String returns a string representation of response r.
 func (r Response) String() string {
 	return fmt.Sprintf("Response{ClientID: %s, ClientSeq: %d, Command: %s}",
-		r.ClientID, r.ClientSeq, r.Command)
+		r.ClientID, r.ClientSeq, r.TxnRes)
 }
 
 // Message definitions - DO NOT EDIT

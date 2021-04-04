@@ -156,6 +156,11 @@ func (p *Proposer) IncrementAllDecidedUpTo() {
 	p.incDcd <- struct{}{}
 }
 
+// IncrementAllDecidedUpTo increments the Proposer's adu variable by one.
+func (p *Proposer) GetAlreadyDecidedUpTo() SlotID {
+	return p.adu
+}
+
 // Internal: handlePromise processes promise prm according to the Multi-Paxos
 // algorithm. If handling the promise results in proposer p emitting a
 // corresponding accept slice, then output will be true and accs contain the

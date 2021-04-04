@@ -32,7 +32,10 @@ type Server struct {
 	accOut          chan mp.Accept
 	retryLimit      int
 	debugLevel      int
-	accounts		map[int]bank.Account
+	accounts        map[int]*bank.Account
+	buffer          map[mp.SlotID]*mp.DecidedValue
+	adu             mp.SlotID
+	sendToClient    chan mp.Response
 }
 
 func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, debug int) *Server {
@@ -44,15 +47,12 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, debug int) *
 	}
 	leaderdetector := ld.NewMonLeaderDetector(nodeIDs)
 	hbSend := make(chan fd.Heartbeat)
-	decidedOut := make(chan mp.DecidedValue, 512)
-	promiseOut := make(chan mp.Promise, 512)
-	learnOut := make(chan mp.Learn, 512)
-	preOut := make(chan mp.Prepare, 512)
-	accOut := make(chan mp.Accept, 512)
+	decidedOut := make(chan mp.DecidedValue, 2048)
+	promiseOut := make(chan mp.Promise, 2048)
+	learnOut := make(chan mp.Learn, 2048)
+	preOut := make(chan mp.Prepare, 2048)
+	accOut := make(chan mp.Accept, 2048)
 	numNodes := len(addresses)
-	accs := make(map[int]bank.Account)
-	accs[0] = bank.Account{0,300}
-	accs[1] = bank.Account{1,200}
 
 	return &Server{
 		id:              id,
@@ -60,7 +60,7 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, debug int) *
 		servers:         addresses,
 		decidedValues:   make(map[string][]mp.DecidedValue),
 		clients:         make(map[string]*net.UDPAddr),
-		lc:              make(chan nt.Message),
+		lc:              make(chan nt.Message, 2048),
 		nodeIDs:         nodeIDs,
 		hbSend:          hbSend,
 		leaderdetector:  leaderdetector,
@@ -75,7 +75,9 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, debug int) *
 		preOut:          preOut,
 		accOut:          accOut,
 		debugLevel:      debug,
-		accounts: 		accs,	
+		accounts:        make(map[int]*bank.Account),
+		buffer:          make(map[mp.SlotID]*mp.DecidedValue),
+		sendToClient:    make(chan mp.Response, 2048),
 	}
 }
 
@@ -94,22 +96,16 @@ func (s *Server) serverLoop() {
 	for {
 		select {
 		case msg := <-s.lc:
-			// debug messages are handled in s.handleIncomming
+			// debug messages for incomming messages are handled in s.handleIncomming
 			s.handleIncomming(&msg)
 		case dec := <-s.decidedOut:
-			temp := s.accounts[dec.Value.AccountNum]
-			results := temp.Process(dec.Value.Txn)
-			fmt.Println(results)
-			s.accounts[dec.Value.AccountNum] = temp
-			fmt.Println(s.accounts)
+			s.handleDecidedValue(&dec)
+		case rsp := <-s.sendToClient:
 			if s.leaderdetector.Leader() != s.id {
 				continue
 			}
-			s.debug(1, "Sending decided value:", dec, "to", s.clients[dec.Value.ClientID])
-			s.proposer.IncrementAllDecidedUpTo()
-			// Change to -> handleDecideValue(&dec)
-
-			nt.Send(&nt.Message{Tp: 1, DecidedValue: &dec}, s.conn, s.clients[dec.Value.ClientID], s.retryLimit)
+			s.debug(1, "Sending response value:", rsp, "to", s.clients[rsp.ClientID])
+			nt.Send(&nt.Message{Tp: 1, Response: &rsp}, s.conn, s.clients[rsp.ClientID], s.retryLimit)
 		case hb := <-s.hbSend:
 			s.debug(3, "Sending heartbeat:", hb, "to", s.servers[hb.To])
 			nt.Send(&nt.Message{Tp: 2, Heartbeat: &hb}, s.conn, s.servers[hb.To], s.retryLimit)
@@ -153,13 +149,31 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 	}
 }
 
-// func (s *Server) handleDecideValue(val mp.DecidedValue){
-// 	s.proposer.
-	// if val.SlotID > adu+1{
-	
-	// }
-// }
-
+func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
+	if val.SlotID > s.adu+1 {
+		s.buffer[val.SlotID] = val
+		return
+	}
+	if !val.Value.Noop {
+		acc, ok := s.accounts[val.Value.AccountNum]
+		if !ok {
+			acc = &bank.Account{Number: val.Value.AccountNum, Balance: 0}
+			s.accounts[val.Value.AccountNum] = acc
+		}
+		result := acc.Process(val.Value.Txn)
+		resp := mp.Response{
+			ClientID:  val.Value.ClientID,
+			ClientSeq: val.Value.ClientSeq,
+			TxnRes:    result,
+		}
+		s.sendToClient <- resp
+		s.adu++
+		s.proposer.IncrementAllDecidedUpTo()
+		if v, ok := s.buffer[s.adu+1]; ok {
+			s.handleDecidedValue(v)
+		}
+	}
+}
 
 func (s *Server) registerClient(id string) {
 	if _, ok := s.clients[id]; !ok {
@@ -174,7 +188,7 @@ func (s *Server) registerClient(id string) {
 }
 
 func (s *Server) debug(level int, messages ...interface{}) {
-	if level >= s.debugLevel {
+	if level <= s.debugLevel {
 		fmt.Println(messages...)
 	}
 }
