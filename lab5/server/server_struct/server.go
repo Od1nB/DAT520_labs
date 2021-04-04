@@ -161,17 +161,16 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 			s.accounts[val.Value.AccountNum] = acc
 		}
 		result := acc.Process(val.Value.Txn)
-		resp := mp.Response{
+		s.sendToClient <- mp.Response{
 			ClientID:  val.Value.ClientID,
 			ClientSeq: val.Value.ClientSeq,
 			TxnRes:    result,
 		}
-		s.sendToClient <- resp
-		s.adu++
-		s.proposer.IncrementAllDecidedUpTo()
-		if v, ok := s.buffer[s.adu+1]; ok {
-			s.handleDecidedValue(v)
-		}
+	}
+	s.adu++
+	s.proposer.IncrementAllDecidedUpTo()
+	if v, ok := s.buffer[s.adu+1]; ok {
+		s.handleDecidedValue(v)
 	}
 }
 

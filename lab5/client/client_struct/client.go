@@ -113,7 +113,6 @@ func (c *Client) getTxn(text string) (accNum int, txn *bank.Transaction, e strin
 		e = "Operation can only be: Balance, Deposit, or Withdraw"
 	}
 	return
-
 }
 
 func (c *Client) handleResponse() {
