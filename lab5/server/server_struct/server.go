@@ -36,9 +36,10 @@ type Server struct {
 	buffer          map[mp.SlotID]*mp.DecidedValue
 	adu             mp.SlotID
 	sendToClient    chan mp.Response
+	stop 			chan struct{}
 }
 
-func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, debug int) *Server {
+func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr,numberOfNodes int, debug int) *Server {
 	conn, err := net.ListenUDP("udp", addresses[id])
 	nt.Check(err)
 	nodeIDs := []int{}
@@ -52,7 +53,7 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, debug int) *
 	learnOut := make(chan mp.Learn, 2048)
 	preOut := make(chan mp.Prepare, 2048)
 	accOut := make(chan mp.Accept, 2048)
-	numNodes := len(addresses)
+	numNodes := numberOfNodes
 
 	return &Server{
 		id:              id,
@@ -78,6 +79,7 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, debug int) *
 		accounts:        make(map[int]*bank.Account),
 		buffer:          make(map[mp.SlotID]*mp.DecidedValue),
 		sendToClient:    make(chan mp.Response, 2048),
+		stop:			 make(chan struct{}),
 	}
 }
 
@@ -100,6 +102,7 @@ func (s *Server) serverLoop() {
 			s.handleIncomming(&msg)
 		case dec := <-s.decidedOut:
 			s.handleDecidedValue(&dec)
+			
 		case rsp := <-s.sendToClient:
 			if s.leaderdetector.Leader() != s.id {
 				continue
@@ -121,9 +124,13 @@ func (s *Server) serverLoop() {
 		case prm := <-s.promiseOut:
 			s.debug(2, "Sending promise:", prm, "to", s.servers[prm.To])
 			nt.Send(&nt.Message{Tp: 6, Promise: &prm}, s.conn, s.servers[prm.To], s.retryLimit)
+		case <- s.stop:
+			return
 		}
 	}
 }
+
+
 
 func (s *Server) handleIncomming(msg *nt.Message) {
 	switch msg.Tp {
@@ -155,16 +162,24 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 		return
 	}
 	if !val.Value.Noop {
-		acc, ok := s.accounts[val.Value.AccountNum]
-		if !ok {
-			acc = &bank.Account{Number: val.Value.AccountNum, Balance: 0}
-			s.accounts[val.Value.AccountNum] = acc
-		}
-		result := acc.Process(val.Value.Txn)
-		s.sendToClient <- mp.Response{
-			ClientID:  val.Value.ClientID,
-			ClientSeq: val.Value.ClientSeq,
-			TxnRes:    result,
+		if val.Value.Reconfig != nil {
+			//reconfigFunction()
+			//stop all of the processes, aka learner and proposer
+			//make new mp modules
+		}else{
+
+
+			acc, ok := s.accounts[val.Value.AccountNum]
+			if !ok {
+				acc = &bank.Account{Number: val.Value.AccountNum, Balance: 0}
+				s.accounts[val.Value.AccountNum] = acc
+			}
+			result := acc.Process(val.Value.Txn)
+			s.sendToClient <- mp.Response{
+				ClientID:  val.Value.ClientID,
+				ClientSeq: val.Value.ClientSeq,
+				TxnRes:    result,
+			}
 		}
 	}
 	s.adu++
@@ -184,6 +199,10 @@ func (s *Server) registerClient(id string) {
 		s.debug(1, "Registered client:", addr)
 		s.clients[id] = addr
 	}
+}
+
+func (s *Server) StopServerLoop(){
+	s.stop <- struct{}{}
 }
 
 func (s *Server) debug(level int, messages ...interface{}) {

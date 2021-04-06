@@ -40,6 +40,11 @@ type Value struct {
 	Noop       bool
 	AccountNum int
 	Txn        bank.Transaction
+	Reconfig   *Reconfig
+}
+
+type Reconfig struct {
+	NumNodes int
 }
 
 // String returns a string representation of value v.

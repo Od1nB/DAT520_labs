@@ -56,20 +56,37 @@ func (c *Client) StartClientLoop() {
 		if len(text) != 0 {
 			c.seq++
 			accNum, txn, err := c.getTxn(text)
+			fmt.Println(txn,1)
 			if err != "" {
 				c.debug(0, err)
 				continue
 			}
-			v := &mp.Value{
-				ClientID:   c.id,
-				ClientSeq:  c.seq,
-				Noop:       false,
-				AccountNum: accNum,
-				Txn:        *txn,
+			if txn == nil {
+				fmt.Println("I made it")
+				v:= &mp.Value{
+					ClientID:   c.id,
+					ClientSeq:  c.seq,
+					Noop:       false,
+					AccountNum: accNum,
+					Txn:        *txn,
+					Reconfig: &mp.Reconfig{NumNodes: accNum},
+				}
+				c.commands[c.seq] = *v
+				m := nt.Message{Value: v}
+				nt.Broadcast(&m, c.conn, c.servers, c.retryLimit)
+			} else{
+				v := &mp.Value{
+					ClientID:   c.id,
+					ClientSeq:  c.seq,
+					Noop:       false,
+					AccountNum: accNum,
+					Txn:        *txn,
+					Reconfig: nil,
+				}
+				c.commands[c.seq] = *v
+				m := nt.Message{Value: v}
+				nt.Broadcast(&m, c.conn, c.servers, c.retryLimit)
 			}
-			c.commands[c.seq] = *v
-			m := nt.Message{Value: v}
-			nt.Broadcast(&m, c.conn, c.servers, c.retryLimit)
 		}
 
 		// wait for response
@@ -109,6 +126,8 @@ func (c *Client) getTxn(text string) (accNum int, txn *bank.Transaction, e strin
 		} else {
 			e = "Amount can only be numbers!"
 		}
+	case "RECONFIG":
+		txn = nil
 	default:
 		e = "Operation can only be: Balance, Deposit, or Withdraw"
 	}

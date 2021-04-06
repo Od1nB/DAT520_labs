@@ -20,13 +20,11 @@ type Message struct {
 	Prepare      *mp.Prepare
 	Promise      *mp.Promise
 	Response     *mp.Response
+	Reconfig 	 *mp.Reconfig
 }
 
 func Send(msg *Message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) error {
 	b, err := json.Marshal(msg)
-	// if msg.Tp == 1 {
-	// 	fmt.Println(msg.DecidedValue)
-	// }
 	if err != nil {
 		return err
 	}

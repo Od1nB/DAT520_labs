@@ -49,6 +49,11 @@ var (
 		0,
 		"Debug level. Default is 0. 1 for info, 2 for all paxos messages except heartbeat, 3 for all messages.",
 	)
+	passive = flag.Bool(
+		"passive",
+		false,
+		"Boolean for setting up server without it taking part of mpaxos, false for not passive and true for it being passive",
+	)
 )
 
 func usage() {
@@ -64,8 +69,13 @@ func main() {
 		flag.Usage()
 		os.Exit(0)
 	}
-	addresses, err := nt.GetServerAddresses(*version, *numNodes, *ports)
+	addresses, err := nt.GetServerAddresses(*version, 7, *ports)
 	nt.Check(err)
-	s := server.NewServer(*id, *delay, *retryLimit, addresses, *debug)
-	s.StartServerLoop()
+	s := server.NewServer(*id, *delay, *retryLimit, addresses,*numNodes, *debug)
+	if *passive{
+		//make a dummy server that only waits for reconfig message to arrive
+		//make function in server struct that takes care of this
+	} else{
+		s.StartServerLoop()
+	}
 }
