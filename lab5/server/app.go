@@ -5,6 +5,7 @@ import (
 	server "dat520/lab5/server/server_struct"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 )
 
@@ -64,8 +65,16 @@ func main() {
 		flag.Usage()
 		os.Exit(0)
 	}
-	addresses, err := nt.GetServerAddresses(*version, 7, *ports)
-	nt.Check(err)
-	s := server.NewServer(*id, *delay, *retryLimit, addresses,*numNodes, *debug)
-		s.StartServerLoop()
+	var addresses []*net.UDPAddr
+	var addr *net.UDPAddr
+	var err error
+	if *numNodes == 1 {
+		addr, err = net.ResolveUDPAddr("udp", "192.168.1.4:19000")
+		addresses = []*net.UDPAddr{addr}
+	} else {
+		addresses, err = nt.GetServerAddresses(*version, *numNodes, *ports)
+		nt.Check(err)
+	}
+	s := server.NewServer(*id, *delay, *retryLimit, addresses, *numNodes, *debug)
+	s.StartServerLoop()
 }

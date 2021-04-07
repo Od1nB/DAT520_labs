@@ -6,8 +6,10 @@ import (
 	"dat520/lab5/bank"
 	mp "dat520/lab5/multipaxos"
 	nt "dat520/lab5/network"
+	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -38,6 +40,7 @@ type Server struct {
 	sendToClient    chan mp.Response
 	stop            chan struct{}
 	delay           time.Duration
+	reconfigure     bool
 }
 
 func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNodes int, debug int) *Server {
@@ -87,7 +90,7 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNode
 }
 
 func (s *Server) StartServerLoop() {
-	s.debug(1, "Starting server: ", s.servers[s.id], " With id: ", s.id)
+	s.debug(0, "Starting server: ", s.servers[s.id], " With id: ", s.id)
 	defer s.conn.Close()
 	s.failuredetector.Start()
 	s.proposer.Start()
@@ -155,32 +158,56 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 		s.debug(2, "Incomming promise:", msg.Promise)
 		s.proposer.DeliverPromise(*msg.Promise)
 	case nt.Reconfig:
-		s.debug(1, "Incoming Reconfiger: ", msg.Reconfig)
-		s.handleReconfigure(*msg.Value)
+		s.debug(1, "Incoming reconfiguer: ", msg.Value)
+		s.handleReconfigure(msg.Value)
 	}
 }
 
 func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
+	if val.Value.Reconfig.Ips != "" {
+		s.proposer.Stop()
+		s.debug(1, "Stopped proposer?")
+	}
 	if val.SlotID > s.adu+1 {
 		s.buffer[val.SlotID] = val
 		return
 	}
+	s.debug(1, "Value decided: ", val.Value)
 	if !val.Value.Noop {
-		if val.Value.Reconfig != nil {
-			//reconfigFunction()
+		if val.Value.Reconfig.Ips != "" {
+			s.debug(1, "Processing reconfig: ", val.Value.Reconfig)
 			s.proposer.Stop()
 			s.acceptor.Stop()
 			s.learner.Stop()
 			s.failuredetector.Stop()
+			delete(s.buffer, s.adu)
 
-			for i, v := range val.Value.Reconfig.Ips {
-				if v == s.servers[s.id] {
-					r := val.Value.Reconfig
-					nodeIDs := make([]int, len(r.Ips))
-					for i := 0; i < len(r.Ips); i++ {
+			for i, v := range s.buffer {
+				s.sendToClient <- mp.Response{
+					ClientID:  v.Value.ClientID,
+					ClientSeq: v.Value.ClientSeq,
+					TxnRes: bank.TransactionResult{
+						AccountNum:  v.Value.AccountNum,
+						ErrorString: "Reconfiguring please try again.",
+					},
+				}
+				delete(s.buffer, i)
+			}
+			r := val.Value.Reconfig
+			ips := s.splitIps(r.Ips)
+			ownIP := s.servers[s.id].String()
+			for i, v := range ips {
+				s.debug(1, "Not own ip: ", v, s.servers[s.id])
+				if v.String() == ownIP {
+					s.debug(1, "Found own ip: ", v)
+					nodeIDs := make([]int, len(ips))
+					for i := 0; i < len(ips); i++ {
 						nodeIDs[i] = i
 					}
+					s.debug(1, nodeIDs)
 					s.id = i
+					s.adu = r.Adu
+					s.servers = ips
 					s.leaderdetector = ld.NewMonLeaderDetector(nodeIDs)
 					s.failuredetector = fd.NewEvtFailureDetector(s.id, nodeIDs, s.leaderdetector, s.delay, s.hbSend)
 					s.proposer = mp.NewProposer(s.id, len(nodeIDs), int(r.Adu), s.leaderdetector, s.preOut, s.accOut)
@@ -193,9 +220,15 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 					break
 				}
 			}
-
-			return
-
+			s.sendToClient <- mp.Response{
+				ClientID:  val.Value.ClientID,
+				ClientSeq: val.Value.ClientSeq,
+				TxnRes: bank.TransactionResult{
+					ErrorString: "Reconfig",
+				},
+			}
+			s.reconfigure = false
+			s.debug(0, "Reconfiguration done.")
 		} else {
 			acc, ok := s.accounts[val.Value.AccountNum]
 			if !ok {
@@ -209,9 +242,18 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 				TxnRes:    result,
 			}
 		}
+	} else {
+		s.sendToClient <- mp.Response{
+			ClientID:  val.Value.ClientID,
+			ClientSeq: val.Value.ClientSeq,
+			TxnRes: bank.TransactionResult{
+				ErrorString: "Noop",
+			},
+		}
 	}
 	s.adu++
 	s.proposer.IncrementAllDecidedUpTo()
+	delete(s.buffer, s.adu)
 	if v, ok := s.buffer[s.adu+1]; ok {
 		s.handleDecidedValue(v)
 	}
@@ -230,17 +272,38 @@ func (s *Server) registerClient(id string) {
 }
 
 func (s *Server) handleReconfigure(v *mp.Value) {
-	if s.leaderdetector.Leader() == s.id {
+	if !s.reconfigure && s.leaderdetector.Leader() == s.id {
 		if !v.Reconfig.Include {
-			v.Reconfig.Accounts = s.accounts
+			s.debug(1, "Making reconfig")
+			accs, err := json.Marshal(s.accounts)
+			nt.Check(err)
+			v.Reconfig.Accounts = string(accs)
 			v.Reconfig.Adu = s.adu
 			v.Reconfig.Include = true
+			ips := s.splitIps(v.Reconfig.Ips)
+			for _, ip := range ips {
+				s.debug(1, "Sending reconfig message to: ", ip)
+				s.debug(1, "Sending value: ", v)
+				nt.Send(&nt.Message{Value: v}, s.conn, ip, s.retryLimit)
+			}
 		}
-		s.proposer.DeliverClientValue(*v)
-		for _, ip := range v.Reconfig.Ips {
-			nt.Send(&nt.Message{Tp: nt.Reconfig,Value: v},s.conn,ip,s.retryLimit)
-		}
+		// s.proposer.DeliverClientValue(*v)
 	}
+}
+
+func (s *Server) splitIps(ips string) (addrs []*net.UDPAddr) {
+	ipss := strings.Split(ips, " ")
+	for _, ip := range ipss {
+		addr, err := net.ResolveUDPAddr("udp", ip)
+		nt.Check(err)
+		addrs = append(addrs, addr)
+	}
+	return addrs
+}
+func (s *Server) marshallAccounts(accs string) (accounts map[int]*bank.Account) {
+	err := json.Unmarshal([]byte(accs), &accounts)
+	nt.Check(err)
+	return accounts
 }
 
 func (s *Server) StopServerLoop() {

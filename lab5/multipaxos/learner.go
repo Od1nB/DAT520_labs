@@ -1,5 +1,7 @@
 package multipaxos
 
+import "fmt"
+
 // Learner represents a learner as defined by the Multi-Paxos algorithm.
 type Learner struct {
 	id         int
@@ -10,6 +12,7 @@ type Learner struct {
 	decidedOut chan<- DecidedValue
 	stopIn     chan struct{}
 	learnIn    chan Learn
+	quorum     int
 }
 
 // NewLearner returns a new Multi-Paxos learner. It takes the
@@ -31,6 +34,7 @@ func NewLearner(id int, nrOfNodes int, decidedOut chan<- DecidedValue) *Learner 
 		decidedOut: decidedOut,
 		stopIn:     make(chan struct{}),
 		learnIn:    make(chan Learn),
+		quorum:     nrOfNodes/2 + 1,
 	}
 }
 
@@ -42,11 +46,12 @@ func (l *Learner) Start() {
 			select {
 			case lrn := <-l.learnIn:
 				val, sid, output := l.handleLearn(lrn)
+				fmt.Println("Decided: ", val, sid, output)
 				if output {
 					l.decidedOut <- DecidedValue{SlotID: sid, Value: val}
 				}
 			case <-l.stopIn:
-				break
+				return
 			}
 		}
 	}()
@@ -83,16 +88,17 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 		l.slotMap[learn.Slot] = append(l.slotMap[learn.Slot], learn)
 		l.fromsMap[learn.Slot][learn.From] = true
 	}
-	for slt := range l.slotMap {
+	for k, slt := range l.slotMap {
 		vals := make(map[Value]int)
-		for lrs := range l.slotMap[slt] {
-			vals[l.slotMap[slt][lrs].Val]++
+		for _, lrs := range slt {
+			vals[lrs.Val]++
 		}
+		fmt.Println(len(vals))
 		for v, i := range vals {
-			if i >= l.nrNodes/2+1 {
-				delete(l.slotMap, slt)
-				delete(l.fromsMap, slt)
-				return v, slt, true
+			if i >= l.quorum {
+				delete(l.slotMap, k)
+				delete(l.fromsMap, k)
+				return v, k, true
 			}
 		}
 	}

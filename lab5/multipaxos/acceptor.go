@@ -52,7 +52,7 @@ func (a *Acceptor) Start() {
 					a.learnOut <- learn
 				}
 			case <-a.stopIn:
-				break
+				return
 			}
 		}
 	}()

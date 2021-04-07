@@ -72,6 +72,6 @@ func main() {
 	addresses, err := nt.GetServerAddresses(*version, *numNodes, *ports)
 	nt.Check(err)
 	c := client.NewClient(clientID, *retryLimit, addresses, *debug)
-	fmt.Println("Welcome to Tor Haakon & Odins ATM service")
+	// fmt.Println("Welcome to Tor Haakon & Odins ATM service")
 	c.StartClientLoop()
 }

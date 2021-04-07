@@ -3,7 +3,6 @@ package multipaxos
 import (
 	bank "dat520/lab5/bank"
 	"fmt"
-	"net"
 )
 
 // Type definitions - DO NOT EDIT
@@ -41,14 +40,18 @@ type Value struct {
 	Noop       bool
 	AccountNum int
 	Txn        bank.Transaction
-	Reconfig   *Reconfig
+	Reconfig   Reconfig
 }
 
 type Reconfig struct {
-	Ips      []*net.UDPAddr
-	Accounts map[int]*bank.Account
+	Ips      string
+	Accounts string
 	Adu      SlotID
 	Include  bool
+}
+
+func (r Reconfig) String() string {
+	return fmt.Sprintf("Ips: %v, Accounts: %v, Adu: %d, Include: %v", r.Ips, r.Accounts, r.Adu, r.Include)
 }
 
 // String returns a string representation of value v.
@@ -56,8 +59,8 @@ func (v Value) String() string {
 	if v.Noop {
 		return fmt.Sprintf("No-op value")
 	}
-	return fmt.Sprintf("Value{ClientID: %s, ClientSeq: %d, Account number: %d, Transaction: %s}",
-		v.ClientID, v.ClientSeq, v.AccountNum, v.Txn)
+	return fmt.Sprintf("Value{ClientID: %s, ClientSeq: %d, Account number: %d, Transaction: %s, Reconfig: %s}",
+		v.ClientID, v.ClientSeq, v.AccountNum, v.Txn, v.Reconfig)
 }
 
 // Response represents a response that can be chosen using the Multi-Paxos algorithm and
