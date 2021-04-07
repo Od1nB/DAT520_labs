@@ -23,9 +23,11 @@ type Client struct {
 	lc            chan nt.Message
 	retryLimit    int
 	debugLevel    int
+	selfAddress   *net.UDPAddr
+	rc            chan *mp.Response
 }
 
-func NewClient(id string, retryLimit int, addresses []*net.UDPAddr, debug int) *Client {
+func NewClient(id string, retryLimit int, debug int) *Client {
 	selfAddress, err := net.ResolveUDPAddr("udp", id)
 	nt.Check(err)
 	cliconn, err := net.ListenUDP("udp", selfAddress)
@@ -35,22 +37,39 @@ func NewClient(id string, retryLimit int, addresses []*net.UDPAddr, debug int) *
 		conn:          cliconn,
 		scanner:       bufio.NewScanner(os.Stdin),
 		seq:           0,
-		servers:       addresses,
+		servers:       []*net.UDPAddr{},
 		decidedValues: make(map[string][]mp.DecidedValue),
 		commands:      make(map[int]mp.Value),
 		lc:            make(chan nt.Message),
 		retryLimit:    retryLimit,
 		debugLevel:    debug,
+		selfAddress:   selfAddress,
+		rc:            make(chan *mp.Response),
 	}
 }
 
-func (c *Client) StartClientLoop() {
+func (c *Client) getLeader(s string) {
+	server, err := net.ResolveUDPAddr("udp", s)
+	nt.Check(err)
+	nt.Send(&nt.Message{Tp: nt.Servers, Servers: []*net.UDPAddr{c.selfAddress}}, c.conn, server, c.retryLimit)
+	msg := <-c.lc
+	// ips := strings.Split(msg.Servers," ")
+	// for _, ip:= range ips {
+	// 	server, err := net.ResolveUDPAddr("udp",ip)
+	// 	nt.Check(err)
+	// 	c.servers = append(c.servers, server)
+	// }
+	c.servers = msg.Servers
+}
+
+func (c *Client) StartClientLoop(startServer string) {
 	c.debug(0, "Starting client: ", c.id)
 
 	defer c.conn.Close()
 
 	go nt.Listen(c.conn, c.lc)
-
+	c.getLeader(startServer)
+	go c.handleResponse()
 	for {
 		text := c.getUserInput()
 		if len(text) != 0 {
@@ -85,9 +104,9 @@ func (c *Client) StartClientLoop() {
 				nt.Broadcast(&m, c.conn, c.servers, c.retryLimit)
 			}
 		}
-
 		// wait for response
-		c.handleResponse()
+		r := <- c.rc
+		fmt.Println(r.TxnRes)
 	}
 }
 
@@ -153,17 +172,15 @@ func (c *Client) getTxn(text string) (accNum int, txn *bank.Transaction, r *mp.R
 }
 
 func (c *Client) handleResponse() {
-	msg := <-c.lc
-	fmt.Println(msg.Response.TxnRes)
-	// clientID := msg.DecidedValue.Value.ClientID
-	// if arr, ok := c.decidedValues[clientID]; ok {
-	// 	if len(arr) < msg.DecidedValue.Value.ClientSeq {
-	// 		c.decidedValues[clientID] = append(arr, *msg.DecidedValue)
-	// 	}
-	// } else {
-	// 	c.decidedValues[clientID] = []mp.DecidedValue{*msg.DecidedValue}
-	// }
-	// fmt.Println("Messages so far:", c.decidedValues)
+	for {
+		msg := <-c.lc
+		if msg.Tp == nt.Servers{
+			c.servers = msg.Servers
+		} else{
+			c.rc <- msg.Response
+		}
+	}
+
 }
 
 func (c *Client) debug(level int, messages ...interface{}) {

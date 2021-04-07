@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 )
+
 type Messagetype int
 
 const (
@@ -20,6 +21,7 @@ const (
 	Promise
 	Response
 	Reconfig
+	Servers
 )
 
 type Message struct {
@@ -33,7 +35,8 @@ type Message struct {
 	Prepare      *mp.Prepare
 	Promise      *mp.Promise
 	Response     *mp.Response
-	Reconfig 	 *mp.Reconfig
+	Reconfig     *mp.Reconfig
+	Servers       []*net.UDPAddr
 }
 
 func Send(msg *Message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) error {

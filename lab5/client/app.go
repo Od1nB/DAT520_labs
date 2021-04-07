@@ -2,7 +2,7 @@ package main
 
 import (
 	client "dat520/lab5/client/client_struct"
-	nt "dat520/lab5/network"
+	// nt "dat520/lab5/network"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -51,6 +51,11 @@ var (
 		0,
 		"Debug level. Default is 0. 1 for info, 2 for all messages.",
 	)
+	startServer = flag.String (
+		"s",
+		"192.168.1.1",
+		"Start ip used for connecting to servers",
+	)
 )
 
 func usage() {
@@ -69,9 +74,9 @@ func main() {
 	rand.Seed(time.Now().Unix())
 	myport := 20000 + *id // + myID
 	clientID := fmt.Sprintf("%s:%d", *ip, myport)
-	addresses, err := nt.GetServerAddresses(*version, *numNodes, *ports)
-	nt.Check(err)
-	c := client.NewClient(clientID, *retryLimit, addresses, *debug)
+	// addresses, err := nt.GetServerAddresses(*version, *numNodes, *ports)
+	// nt.Check(err)
+	c := client.NewClient(clientID, *retryLimit, *debug)
 	// fmt.Println("Welcome to Tor Haakon & Odins ATM service")
-	c.StartClientLoop()
+	c.StartClientLoop(*startServer)
 }

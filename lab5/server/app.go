@@ -50,6 +50,11 @@ var (
 		0,
 		"Debug level. Default is 0. 1 for info, 2 for all paxos messages except heartbeat, 3 for all messages.",
 	)
+	ip = flag.String(
+		"ip",
+		"",
+		"Field for quickly setting a servers ip as CLI",
+	)
 )
 
 func usage() {
@@ -68,8 +73,8 @@ func main() {
 	var addresses []*net.UDPAddr
 	var addr *net.UDPAddr
 	var err error
-	if *numNodes == 1 {
-		addr, err = net.ResolveUDPAddr("udp", "192.168.1.4:19000")
+	if *ip != "" {
+		addr, err = net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d",*ip,*ports))
 		addresses = []*net.UDPAddr{addr}
 	} else {
 		addresses, err = nt.GetServerAddresses(*version, *numNodes, *ports)

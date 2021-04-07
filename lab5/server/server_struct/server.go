@@ -160,6 +160,14 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 	case nt.Reconfig:
 		s.debug(1, "Incoming reconfiguer: ", msg.Value)
 		s.handleReconfigure(msg.Value)
+	case nt.Servers:
+		s.debug(1, "Incoming servers request: ",msg)
+		// sout := make([]string,len(s.servers))
+		// for i, servs := range s.servers{
+		// 	sout[i] = servs.String()
+		// }
+		nt.Send(&nt.Message{Tp: nt.Servers,Servers: s.servers },s.conn,msg.Servers[0],s.retryLimit)
+		
 	}
 }
 
@@ -196,6 +204,7 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 			r := val.Value.Reconfig
 			ips := s.splitIps(r.Ips)
 			ownIP := s.servers[s.id].String()
+			isIncluded := false
 			for i, v := range ips {
 				s.debug(1, "Not own ip: ", v, s.servers[s.id])
 				if v.String() == ownIP {
@@ -208,6 +217,7 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 					s.id = i
 					s.adu = r.Adu
 					s.servers = ips
+					s.accounts = s.unmarshallAccounts(r.Accounts)
 					s.leaderdetector = ld.NewMonLeaderDetector(nodeIDs)
 					s.failuredetector = fd.NewEvtFailureDetector(s.id, nodeIDs, s.leaderdetector, s.delay, s.hbSend)
 					s.proposer = mp.NewProposer(s.id, len(nodeIDs), int(r.Adu), s.leaderdetector, s.preOut, s.accOut)
@@ -217,6 +227,7 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 					s.proposer.Start()
 					s.acceptor.Start()
 					s.learner.Start()
+					isIncluded = true
 					break
 				}
 			}
@@ -229,7 +240,16 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 			}
 			s.reconfigure = false
 			s.debug(0, "Reconfiguration done.")
-		} else {
+			if !isIncluded{
+				s.StopServerLoop()
+				s.debug(0,"Server has stopped.")
+			}else{
+				servmsg := &nt.Message{Tp:nt.Servers,Servers: s.servers}
+				for _, cli := range s.clients{
+					nt.Send(servmsg,s.conn,cli,s.retryLimit)
+				}
+			}
+			} else {
 			acc, ok := s.accounts[val.Value.AccountNum]
 			if !ok {
 				acc = &bank.Account{Number: val.Value.AccountNum, Balance: 0}
@@ -300,9 +320,10 @@ func (s *Server) splitIps(ips string) (addrs []*net.UDPAddr) {
 	}
 	return addrs
 }
-func (s *Server) marshallAccounts(accs string) (accounts map[int]*bank.Account) {
+func (s *Server) unmarshallAccounts(accs string) (accounts map[int]*bank.Account) {
 	err := json.Unmarshal([]byte(accs), &accounts)
 	nt.Check(err)
+	s.debug(1,"Accounts being marshalled: ",accounts)
 	return accounts
 }
 
