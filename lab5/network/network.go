@@ -8,9 +8,22 @@ import (
 	"net"
 	"os"
 )
+type Messagetype int
+
+const (
+	Value Messagetype = iota
+	DecidedValue
+	Heartbeat
+	Accept
+	Learn
+	Prepare
+	Promise
+	Response
+	Reconfig
+)
 
 type Message struct {
-	Tp int
+	Tp Messagetype
 	// Val          interface{}
 	Value        *mp.Value
 	DecidedValue *mp.DecidedValue

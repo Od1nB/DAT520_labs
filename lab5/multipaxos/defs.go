@@ -3,6 +3,7 @@ package multipaxos
 import (
 	bank "dat520/lab5/bank"
 	"fmt"
+	"net"
 )
 
 // Type definitions - DO NOT EDIT
@@ -44,7 +45,10 @@ type Value struct {
 }
 
 type Reconfig struct {
-	NumNodes int
+	Ips      []*net.UDPAddr
+	Accounts map[int]*bank.Account
+	Adu      SlotID
+	Include  bool
 }
 
 // String returns a string representation of value v.

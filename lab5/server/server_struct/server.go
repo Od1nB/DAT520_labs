@@ -36,16 +36,18 @@ type Server struct {
 	buffer          map[mp.SlotID]*mp.DecidedValue
 	adu             mp.SlotID
 	sendToClient    chan mp.Response
-	stop 			chan struct{}
+	stop            chan struct{}
+	delay           time.Duration
 }
 
-func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr,numberOfNodes int, debug int) *Server {
+func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNodes int, debug int) *Server {
 	conn, err := net.ListenUDP("udp", addresses[id])
 	nt.Check(err)
 	nodeIDs := []int{}
 	for i, l := 0, len(addresses); i < l; i++ {
 		nodeIDs = append(nodeIDs, i)
 	}
+	d := time.Duration(delay) * time.Millisecond
 	leaderdetector := ld.NewMonLeaderDetector(nodeIDs)
 	hbSend := make(chan fd.Heartbeat)
 	decidedOut := make(chan mp.DecidedValue, 2048)
@@ -65,7 +67,7 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr,numberOfNodes
 		nodeIDs:         nodeIDs,
 		hbSend:          hbSend,
 		leaderdetector:  leaderdetector,
-		failuredetector: fd.NewEvtFailureDetector(id, nodeIDs, leaderdetector, time.Duration(delay)*time.Millisecond, hbSend),
+		failuredetector: fd.NewEvtFailureDetector(id, nodeIDs, leaderdetector, d, hbSend),
 		proposer:        mp.NewProposer(id, numNodes, -1, leaderdetector, preOut, accOut),
 		learner:         mp.NewLearner(id, numNodes, decidedOut),
 		acceptor:        mp.NewAcceptor(id, promiseOut, learnOut),
@@ -79,7 +81,8 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr,numberOfNodes
 		accounts:        make(map[int]*bank.Account),
 		buffer:          make(map[mp.SlotID]*mp.DecidedValue),
 		sendToClient:    make(chan mp.Response, 2048),
-		stop:			 make(chan struct{}),
+		stop:            make(chan struct{}),
+		delay:           d,
 	}
 }
 
@@ -102,7 +105,7 @@ func (s *Server) serverLoop() {
 			s.handleIncomming(&msg)
 		case dec := <-s.decidedOut:
 			s.handleDecidedValue(&dec)
-			
+
 		case rsp := <-s.sendToClient:
 			if s.leaderdetector.Leader() != s.id {
 				continue
@@ -124,35 +127,36 @@ func (s *Server) serverLoop() {
 		case prm := <-s.promiseOut:
 			s.debug(2, "Sending promise:", prm, "to", s.servers[prm.To])
 			nt.Send(&nt.Message{Tp: 6, Promise: &prm}, s.conn, s.servers[prm.To], s.retryLimit)
-		case <- s.stop:
+		case <-s.stop:
 			return
 		}
 	}
 }
 
-
-
 func (s *Server) handleIncomming(msg *nt.Message) {
 	switch msg.Tp {
-	case 0:
+	case nt.Value:
 		s.debug(1, "Incomming client value:", msg.Value)
 		s.proposer.DeliverClientValue(*msg.Value)
 		s.registerClient(msg.Value.ClientID)
-	case 2:
+	case nt.Heartbeat:
 		s.debug(3, "Incomming heartbeat:", msg.Heartbeat)
 		s.failuredetector.DeliverHeartbeat(*msg.Heartbeat)
-	case 3:
+	case nt.Accept:
 		s.debug(2, "Incomming accept:", msg.Accept)
 		s.acceptor.DeliverAccept(*msg.Accept)
-	case 4:
+	case nt.Learn:
 		s.debug(2, "Incomming learn:", msg.Learn)
 		s.learner.DeliverLearn(*msg.Learn)
-	case 5:
+	case nt.Prepare:
 		s.debug(2, "Incomming prepare:", msg.Prepare)
 		s.acceptor.DeliverPrepare(*msg.Prepare)
-	case 6:
+	case nt.Promise:
 		s.debug(2, "Incomming promise:", msg.Promise)
 		s.proposer.DeliverPromise(*msg.Promise)
+	case nt.Reconfig:
+		s.debug(1, "Incoming Reconfiger: ", msg.Reconfig)
+		s.handleReconfigure(*msg.Value)
 	}
 }
 
@@ -164,11 +168,35 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 	if !val.Value.Noop {
 		if val.Value.Reconfig != nil {
 			//reconfigFunction()
-			//stop all of the processes, aka learner and proposer
-			//make new mp modules
-		}else{
+			s.proposer.Stop()
+			s.acceptor.Stop()
+			s.learner.Stop()
+			s.failuredetector.Stop()
 
+			for i, v := range val.Value.Reconfig.Ips {
+				if v == s.servers[s.id] {
+					r := val.Value.Reconfig
+					nodeIDs := make([]int, len(r.Ips))
+					for i := 0; i < len(r.Ips); i++ {
+						nodeIDs[i] = i
+					}
+					s.id = i
+					s.leaderdetector = ld.NewMonLeaderDetector(nodeIDs)
+					s.failuredetector = fd.NewEvtFailureDetector(s.id, nodeIDs, s.leaderdetector, s.delay, s.hbSend)
+					s.proposer = mp.NewProposer(s.id, len(nodeIDs), int(r.Adu), s.leaderdetector, s.preOut, s.accOut)
+					s.learner = mp.NewLearner(s.id, len(nodeIDs), s.decidedOut)
+					s.acceptor = mp.NewAcceptor(s.id, s.promiseOut, s.learnOut)
+					s.failuredetector.Start()
+					s.proposer.Start()
+					s.acceptor.Start()
+					s.learner.Start()
+					break
+				}
+			}
 
+			return
+
+		} else {
 			acc, ok := s.accounts[val.Value.AccountNum]
 			if !ok {
 				acc = &bank.Account{Number: val.Value.AccountNum, Balance: 0}
@@ -201,7 +229,21 @@ func (s *Server) registerClient(id string) {
 	}
 }
 
-func (s *Server) StopServerLoop(){
+func (s *Server) handleReconfigure(v *mp.Value) {
+	if s.leaderdetector.Leader() == s.id {
+		if !v.Reconfig.Include {
+			v.Reconfig.Accounts = s.accounts
+			v.Reconfig.Adu = s.adu
+			v.Reconfig.Include = true
+		}
+		s.proposer.DeliverClientValue(*v)
+		for _, ip := range v.Reconfig.Ips {
+			nt.Send(&nt.Message{Tp: nt.Reconfig,Value: v},s.conn,ip,s.retryLimit)
+		}
+	}
+}
+
+func (s *Server) StopServerLoop() {
 	s.stop <- struct{}{}
 }
 
