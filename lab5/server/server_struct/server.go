@@ -41,6 +41,7 @@ type Server struct {
 	stop            chan struct{}
 	delay           time.Duration
 	reconfigure     bool
+	conifID         int
 }
 
 func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNodes int, debug int) *Server {
@@ -104,6 +105,10 @@ func (s *Server) serverLoop() {
 	for {
 		select {
 		case msg := <-s.lc:
+			if msg.ConfigID != s.conifID && msg.Tp != nt.Value && msg.Tp != nt.Reconfig && msg.Tp != nt.Servers && msg.Tp != nt.Heartbeat{
+				s.debug(2,"Skipped msg: ",msg)
+				continue
+			}
 			// debug messages for incomming messages are handled in s.handleIncomming
 			s.handleIncomming(&msg)
 		case dec := <-s.decidedOut:
@@ -114,22 +119,22 @@ func (s *Server) serverLoop() {
 				continue
 			}
 			s.debug(1, "Sending response value:", rsp, "to", s.clients[rsp.ClientID])
-			nt.Send(&nt.Message{Tp: 1, Response: &rsp}, s.conn, s.clients[rsp.ClientID], s.retryLimit)
+			nt.Send(&nt.Message{Tp: 1, Response: &rsp,ConfigID: s.conifID}, s.conn, s.clients[rsp.ClientID], s.retryLimit)
 		case hb := <-s.hbSend:
 			s.debug(3, "Sending heartbeat:", hb, "to", s.servers[hb.To])
-			nt.Send(&nt.Message{Tp: 2, Heartbeat: &hb}, s.conn, s.servers[hb.To], s.retryLimit)
+			nt.Send(&nt.Message{Tp: 2, Heartbeat: &hb,ConfigID: s.conifID}, s.conn, s.servers[hb.To], s.retryLimit)
 		case acc := <-s.accOut:
 			s.debug(2, "Broadcast accept:", acc)
-			nt.Broadcast(&nt.Message{Tp: 3, Accept: &acc}, s.conn, s.servers, s.retryLimit)
+			nt.Broadcast(&nt.Message{Tp: 3, Accept: &acc,ConfigID: s.conifID}, s.conn, s.servers, s.retryLimit)
 		case lrn := <-s.learnOut:
 			s.debug(2, "Broadcast learn:", lrn)
-			nt.Broadcast(&nt.Message{Tp: 4, Learn: &lrn}, s.conn, s.servers, s.retryLimit)
+			nt.Broadcast(&nt.Message{Tp: 4, Learn: &lrn,ConfigID: s.conifID}, s.conn, s.servers, s.retryLimit)
 		case pre := <-s.preOut:
 			s.debug(2, "Broadcast prepare:", pre)
-			nt.Broadcast(&nt.Message{Tp: 5, Prepare: &pre}, s.conn, s.servers, s.retryLimit)
+			nt.Broadcast(&nt.Message{Tp: 5, Prepare: &pre,ConfigID: s.conifID}, s.conn, s.servers, s.retryLimit)
 		case prm := <-s.promiseOut:
 			s.debug(2, "Sending promise:", prm, "to", s.servers[prm.To])
-			nt.Send(&nt.Message{Tp: 6, Promise: &prm}, s.conn, s.servers[prm.To], s.retryLimit)
+			nt.Send(&nt.Message{Tp: 6, Promise: &prm,ConfigID: s.conifID}, s.conn, s.servers[prm.To], s.retryLimit)
 		case <-s.stop:
 			return
 		}
@@ -161,13 +166,13 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 		s.debug(1, "Incoming reconfiguer: ", msg.Value)
 		s.handleReconfigure(msg.Value)
 	case nt.Servers:
-		s.debug(1, "Incoming servers request: ",msg)
+		s.debug(1, "Incoming servers request: ", msg)
 		// sout := make([]string,len(s.servers))
 		// for i, servs := range s.servers{
 		// 	sout[i] = servs.String()
 		// }
-		nt.Send(&nt.Message{Tp: nt.Servers,Servers: s.servers },s.conn,msg.Servers[0],s.retryLimit)
-		
+		nt.Send(&nt.Message{Tp: nt.Servers, Servers: s.servers,ConfigID: s.conifID}, s.conn, msg.Servers[0], s.retryLimit)
+
 	}
 }
 
@@ -215,6 +220,7 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 					}
 					s.debug(1, nodeIDs)
 					s.id = i
+					s.conifID = r.ConfigID
 					s.adu = r.Adu
 					s.servers = ips
 					s.accounts = s.unmarshallAccounts(r.Accounts)
@@ -240,16 +246,16 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 			}
 			s.reconfigure = false
 			s.debug(0, "Reconfiguration done.")
-			if !isIncluded{
+			if !isIncluded {
 				s.StopServerLoop()
-				s.debug(0,"Server has stopped.")
-			}else{
-				servmsg := &nt.Message{Tp:nt.Servers,Servers: s.servers}
-				for _, cli := range s.clients{
-					nt.Send(servmsg,s.conn,cli,s.retryLimit)
+				s.debug(0, "Server has stopped.")
+			} else {
+				servmsg := &nt.Message{Tp: nt.Servers, Servers: s.servers}
+				for _, cli := range s.clients {
+					nt.Send(servmsg, s.conn, cli, s.retryLimit)
 				}
 			}
-			} else {
+		} else {
 			acc, ok := s.accounts[val.Value.AccountNum]
 			if !ok {
 				acc = &bank.Account{Number: val.Value.AccountNum, Balance: 0}
@@ -300,11 +306,12 @@ func (s *Server) handleReconfigure(v *mp.Value) {
 			v.Reconfig.Accounts = string(accs)
 			v.Reconfig.Adu = s.adu
 			v.Reconfig.Include = true
+			v.Reconfig.ConfigID = s.conifID + 1
 			ips := s.splitIps(v.Reconfig.Ips)
 			for _, ip := range ips {
 				s.debug(1, "Sending reconfig message to: ", ip)
 				s.debug(1, "Sending value: ", v)
-				nt.Send(&nt.Message{Value: v}, s.conn, ip, s.retryLimit)
+				nt.Send(&nt.Message{Value: v,ConfigID: s.conifID}, s.conn, ip, s.retryLimit)
 			}
 		}
 		// s.proposer.DeliverClientValue(*v)
@@ -323,7 +330,7 @@ func (s *Server) splitIps(ips string) (addrs []*net.UDPAddr) {
 func (s *Server) unmarshallAccounts(accs string) (accounts map[int]*bank.Account) {
 	err := json.Unmarshal([]byte(accs), &accounts)
 	nt.Check(err)
-	s.debug(1,"Accounts being marshalled: ",accounts)
+	s.debug(1, "Accounts being marshalled: ", accounts)
 	return accounts
 }
 
