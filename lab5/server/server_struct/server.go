@@ -41,6 +41,7 @@ type Server struct {
 	stop            chan struct{}
 	delay           time.Duration
 	reconfigure     bool
+	configID        int
 }
 
 func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNodes int, debug int) *Server {
@@ -71,7 +72,7 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNode
 		hbSend:          hbSend,
 		leaderdetector:  leaderdetector,
 		failuredetector: fd.NewEvtFailureDetector(id, nodeIDs, leaderdetector, d, hbSend),
-		proposer:        mp.NewProposer(id, numNodes, -1, leaderdetector, preOut, accOut),
+		proposer:        mp.NewProposer(id, numNodes, -1, 0, leaderdetector, preOut, accOut),
 		learner:         mp.NewLearner(id, numNodes, decidedOut),
 		acceptor:        mp.NewAcceptor(id, promiseOut, learnOut),
 		retryLimit:      retryLimit,
@@ -161,18 +162,17 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 		s.debug(1, "Incoming reconfiguer: ", msg.Value)
 		s.handleReconfigure(msg.Value)
 	case nt.Servers:
-		s.debug(1, "Incoming servers request: ",msg)
+		s.debug(1, "Incoming servers request: ", msg)
 		// sout := make([]string,len(s.servers))
 		// for i, servs := range s.servers{
 		// 	sout[i] = servs.String()
 		// }
-		nt.Send(&nt.Message{Tp: nt.Servers,Servers: s.servers },s.conn,msg.Servers[0],s.retryLimit)
-		
+		nt.Send(&nt.Message{Tp: nt.Servers, Servers: s.servers}, s.conn, msg.Servers[0], s.retryLimit)
 	}
 }
 
 func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
-	if val.Value.Reconfig.Ips != "" {
+	if len(val.Value.Reconfig.Ips) == 0 {
 		s.proposer.Stop()
 		s.debug(1, "Stopped proposer?")
 	}
@@ -182,7 +182,7 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 	}
 	s.debug(1, "Value decided: ", val.Value)
 	if !val.Value.Noop {
-		if val.Value.Reconfig.Ips != "" {
+		if len(val.Value.Reconfig.Ips) != 0 {
 			s.debug(1, "Processing reconfig: ", val.Value.Reconfig)
 			s.proposer.Stop()
 			s.acceptor.Stop()
@@ -202,25 +202,25 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 				delete(s.buffer, i)
 			}
 			r := val.Value.Reconfig
-			ips := s.splitIps(r.Ips)
 			ownIP := s.servers[s.id].String()
 			isIncluded := false
-			for i, v := range ips {
-				s.debug(1, "Not own ip: ", v, s.servers[s.id])
+			for i, v := range r.Ips {
+				s.debug(1, "Server ip: ", v, s.servers[s.id])
 				if v.String() == ownIP {
 					s.debug(1, "Found own ip: ", v)
-					nodeIDs := make([]int, len(ips))
-					for i := 0; i < len(ips); i++ {
+					nodeIDs := make([]int, len(r.Ips))
+					for i := 0; i < len(r.Ips); i++ {
 						nodeIDs[i] = i
 					}
 					s.debug(1, nodeIDs)
 					s.id = i
 					s.adu = r.Adu
-					s.servers = ips
-					s.accounts = s.unmarshallAccounts(r.Accounts)
+					s.servers = r.Ips
+					s.configID = r.ConfigID
+					s.accounts = r.Accounts
 					s.leaderdetector = ld.NewMonLeaderDetector(nodeIDs)
 					s.failuredetector = fd.NewEvtFailureDetector(s.id, nodeIDs, s.leaderdetector, s.delay, s.hbSend)
-					s.proposer = mp.NewProposer(s.id, len(nodeIDs), int(r.Adu), s.leaderdetector, s.preOut, s.accOut)
+					s.proposer = mp.NewProposer(s.id, len(nodeIDs), int(r.Adu), r.ConfigID, s.leaderdetector, s.preOut, s.accOut)
 					s.learner = mp.NewLearner(s.id, len(nodeIDs), s.decidedOut)
 					s.acceptor = mp.NewAcceptor(s.id, s.promiseOut, s.learnOut)
 					s.failuredetector.Start()
@@ -240,16 +240,16 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 			}
 			s.reconfigure = false
 			s.debug(0, "Reconfiguration done.")
-			if !isIncluded{
+			if !isIncluded {
 				s.StopServerLoop()
-				s.debug(0,"Server has stopped.")
-			}else{
-				servmsg := &nt.Message{Tp:nt.Servers,Servers: s.servers}
-				for _, cli := range s.clients{
-					nt.Send(servmsg,s.conn,cli,s.retryLimit)
+				s.debug(0, "Server has stopped.")
+			} else {
+				servmsg := &nt.Message{Tp: nt.Servers, Servers: s.servers}
+				for _, cli := range s.clients {
+					nt.Send(servmsg, s.conn, cli, s.retryLimit)
 				}
 			}
-			} else {
+		} else {
 			acc, ok := s.accounts[val.Value.AccountNum]
 			if !ok {
 				acc = &bank.Account{Number: val.Value.AccountNum, Balance: 0}
@@ -273,6 +273,7 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 	}
 	s.adu++
 	s.proposer.IncrementAllDecidedUpTo()
+	s.debug(2, "ADU", s.adu)
 	delete(s.buffer, s.adu)
 	if v, ok := s.buffer[s.adu+1]; ok {
 		s.handleDecidedValue(v)
@@ -295,12 +296,11 @@ func (s *Server) handleReconfigure(v *mp.Value) {
 	if !s.reconfigure && s.leaderdetector.Leader() == s.id {
 		if !v.Reconfig.Include {
 			s.debug(1, "Making reconfig")
-			accs, err := json.Marshal(s.accounts)
-			nt.Check(err)
-			v.Reconfig.Accounts = string(accs)
+			v.Reconfig.Accounts = s.accounts
 			v.Reconfig.Adu = s.adu
 			v.Reconfig.Include = true
-			ips := s.splitIps(v.Reconfig.Ips)
+			v.Reconfig.ConfigID = s.configID + 1
+			ips := v.Reconfig.Ips
 			for _, ip := range ips {
 				s.debug(1, "Sending reconfig message to: ", ip)
 				s.debug(1, "Sending value: ", v)
@@ -323,7 +323,7 @@ func (s *Server) splitIps(ips string) (addrs []*net.UDPAddr) {
 func (s *Server) unmarshallAccounts(accs string) (accounts map[int]*bank.Account) {
 	err := json.Unmarshal([]byte(accs), &accounts)
 	nt.Check(err)
-	s.debug(1,"Accounts being marshalled: ",accounts)
+	s.debug(1, "Accounts being marshalled: ", accounts)
 	return accounts
 }
 

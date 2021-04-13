@@ -3,6 +3,7 @@ package multipaxos
 import (
 	"container/list"
 	"dat520/lab3/leaderdetector"
+	"fmt"
 	"time"
 )
 
@@ -37,6 +38,8 @@ type Proposer struct {
 
 	incDcd chan struct{}
 	stop   chan struct{}
+
+	configID int
 }
 
 // NewProposer returns a new Multi-Paxos proposer. It takes the following
@@ -56,7 +59,7 @@ type Proposer struct {
 //
 // The proposer's internal crnd field should initially be set to the value of
 // its id.
-func NewProposer(id, nrOfNodes, adu int, ld leaderdetector.LeaderDetector, prepareOut chan<- Prepare, acceptOut chan<- Accept) *Proposer {
+func NewProposer(id, nrOfNodes, adu, configID int, ld leaderdetector.LeaderDetector, prepareOut chan<- Prepare, acceptOut chan<- Accept) *Proposer {
 	return &Proposer{
 		id:     id,
 		quorum: (nrOfNodes / 2) + 1,
@@ -83,6 +86,8 @@ func NewProposer(id, nrOfNodes, adu int, ld leaderdetector.LeaderDetector, prepa
 
 		incDcd: make(chan struct{}),
 		stop:   make(chan struct{}),
+
+		configID: configID,
 	}
 }
 
@@ -232,6 +237,7 @@ func (p *Proposer) sendAccept() {
 	// accept.
 	if p.requestsIn.Len() > 0 {
 		cval := p.requestsIn.Front().Value.(Value)
+		cval.UniqueID = fmt.Sprintf("%d.%d.%d", p.id, p.configID, p.nextSlot)
 		p.requestsIn.Remove(p.requestsIn.Front())
 		acc := Accept{
 			From: p.id,

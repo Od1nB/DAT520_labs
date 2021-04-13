@@ -33,7 +33,7 @@ func testHandlePromise(tests []proposerTest, t *testing.T) {
 
 var proposerTestsThreeNodes = []proposerTest{
 	{
-		NewProposer(2, 3, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -48,7 +48,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -73,7 +73,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -88,7 +88,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -123,7 +123,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -158,7 +158,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -183,7 +183,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 1, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 1, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -209,7 +209,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 1, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 1, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -236,7 +236,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 1, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 1, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -266,7 +266,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 1, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 1, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -300,7 +300,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 1, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 1, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -354,7 +354,7 @@ var proposerTestsThreeNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 3, 1, &mockLD{}, nil, nil),
+		NewProposer(2, 3, 1, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -411,7 +411,7 @@ var proposerTestsThreeNodes = []proposerTest{
 
 var proposerTestsFiveNodes = []proposerTest{
 	{
-		NewProposer(2, 5, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 5, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -426,7 +426,7 @@ var proposerTestsFiveNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 5, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 5, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -461,7 +461,7 @@ var proposerTestsFiveNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 5, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 5, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -476,7 +476,7 @@ var proposerTestsFiveNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 5, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 5, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -511,7 +511,7 @@ var proposerTestsFiveNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 5, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 5, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{
@@ -546,7 +546,7 @@ var proposerTestsFiveNodes = []proposerTest{
 		},
 	},
 	{
-		NewProposer(2, 5, 0, &mockLD{}, nil, nil),
+		NewProposer(2, 5, 0, 0, &mockLD{}, nil, nil),
 		[]paction{
 			{
 				Promise{

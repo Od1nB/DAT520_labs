@@ -1,18 +1,17 @@
 package multipaxos
 
-import "fmt"
-
 // Learner represents a learner as defined by the Multi-Paxos algorithm.
 type Learner struct {
-	id         int
-	nrNodes    int
-	slotMap    map[SlotID][]Learn
-	rnd        Round
-	fromsMap   map[SlotID][]bool
-	decidedOut chan<- DecidedValue
-	stopIn     chan struct{}
-	learnIn    chan Learn
-	quorum     int
+	id          int
+	nrNodes     int
+	slotMap     map[SlotID][]Learn
+	rnd         Round
+	fromsMap    map[SlotID][]bool
+	decidedOut  chan<- DecidedValue
+	stopIn      chan struct{}
+	learnIn     chan Learn
+	quorum      int
+	decidedVals map[string]Value
 }
 
 // NewLearner returns a new Multi-Paxos learner. It takes the
@@ -26,15 +25,16 @@ type Learner struct {
 // i.e. decided by the Paxos nodes.
 func NewLearner(id int, nrOfNodes int, decidedOut chan<- DecidedValue) *Learner {
 	return &Learner{
-		id:         id,
-		nrNodes:    nrOfNodes,
-		slotMap:    make(map[SlotID][]Learn),
-		rnd:        NoRound,
-		fromsMap:   make(map[SlotID][]bool),
-		decidedOut: decidedOut,
-		stopIn:     make(chan struct{}),
-		learnIn:    make(chan Learn),
-		quorum:     nrOfNodes/2 + 1,
+		id:          id,
+		nrNodes:     nrOfNodes,
+		slotMap:     make(map[SlotID][]Learn),
+		rnd:         NoRound,
+		fromsMap:    make(map[SlotID][]bool),
+		decidedOut:  decidedOut,
+		stopIn:      make(chan struct{}),
+		learnIn:     make(chan Learn),
+		quorum:      nrOfNodes/2 + 1,
+		decidedVals: make(map[string]Value),
 	}
 }
 
@@ -46,7 +46,6 @@ func (l *Learner) Start() {
 			select {
 			case lrn := <-l.learnIn:
 				val, sid, output := l.handleLearn(lrn)
-				fmt.Println("Decided: ", val, sid, output)
 				if output {
 					l.decidedOut <- DecidedValue{SlotID: sid, Value: val}
 				}
@@ -89,16 +88,23 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 		l.fromsMap[learn.Slot][learn.From] = true
 	}
 	for k, slt := range l.slotMap {
-		vals := make(map[Value]int)
+		vals := make(map[string]int)
 		for _, lrs := range slt {
-			vals[lrs.Val]++
+			vals[lrs.Val.UniqueID]++
 		}
-		fmt.Println(len(vals))
-		for v, i := range vals {
+		v := 0
+		for uid, i := range vals {
 			if i >= l.quorum {
+				val := slt[v].Val
 				delete(l.slotMap, k)
 				delete(l.fromsMap, k)
-				return v, k, true
+				l.decidedVals[val.UniqueID] = val
+				return val, k, true
+			}
+			v++
+			if _, ok := l.decidedVals[uid]; ok {
+				delete(l.slotMap, k)
+				delete(l.fromsMap, k)
 			}
 		}
 	}
