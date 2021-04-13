@@ -40,7 +40,8 @@ type Server struct {
 	delay           time.Duration
 	reconfigure     bool
 	configID        int
-	rc 				chan *mp.Reconfig
+	rc              chan *mp.Reconfig
+	msgBuffer       []*nt.Message
 }
 
 func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNodes int, debug int) *Server {
@@ -86,7 +87,8 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNode
 		sendToClient:    make(chan mp.Response, 2048),
 		stop:            make(chan struct{}),
 		delay:           d,
-		rc: make(chan *mp.Reconfig, 2048),
+		rc:              make(chan *mp.Reconfig, 2048),
+		msgBuffer:       []*nt.Message{},
 	}
 }
 
@@ -108,10 +110,15 @@ func (s *Server) serverLoop() {
 			// debug messages for incomming messages are handled in s.handleIncomming
 			// s.debug(2,"Incoming configID: ",msg.ConfigID," and own configID: ",s.configID," message type: ",msg.Tp)
 			// if msg.ConfigID == s.configID || msg.Tp == nt.Value || msg.Tp == nt.Reconfig{
-			if msg.Tp != nt.Heartbeat{
-				s.debug(2,"Incoming message ", msg)
+			// if msg.Tp != nt.Heartbeat {
+			// 	s.debug(2, "Incoming message ", msg)
+			// }
+			if msg.Tp == nt.Servers || msg.Tp == nt.Reconfig || (!s.reconfigure && msg.ConfigID == s.configID) {
+				go s.handleIncomming(&msg)
+			} else if msg.ConfigID > s.configID {
+				s.debug(2, "Buffer message", msg)
+				s.msgBuffer = append(s.msgBuffer, &msg)
 			}
-			go s.handleIncomming(&msg)
 			// }
 		case dec := <-s.decidedOut:
 			go s.handleDecidedValue(&dec)
@@ -120,22 +127,22 @@ func (s *Server) serverLoop() {
 				continue
 			}
 			s.debug(1, "Sending response value:", rsp, "to", s.clients[rsp.ClientID])
-			nt.Send(&nt.Message{ConfigID:s.configID,Tp: 1, Response: &rsp}, s.conn, s.clients[rsp.ClientID], s.retryLimit)
+			nt.Send(&nt.Message{ConfigID: s.configID, Tp: 1, Response: &rsp}, s.conn, s.clients[rsp.ClientID], s.retryLimit)
 		case hb := <-s.hbSend:
 			s.debug(3, "Sending heartbeat:", hb, "to", s.servers[hb.To])
-			nt.Send(&nt.Message{ConfigID:s.configID,Tp: 2, Heartbeat: &hb}, s.conn, s.servers[hb.To], s.retryLimit)
+			nt.Send(&nt.Message{ConfigID: s.configID, Tp: 2, Heartbeat: &hb}, s.conn, s.servers[hb.To], s.retryLimit)
 		case acc := <-s.accOut:
 			s.debug(2, "Broadcast accept:", acc)
-			nt.Broadcast(&nt.Message{ConfigID:s.configID,Tp: 3, Accept: &acc}, s.conn, s.servers, s.retryLimit)
+			nt.Broadcast(&nt.Message{ConfigID: s.configID, Tp: 3, Accept: &acc}, s.conn, s.servers, s.retryLimit)
 		case lrn := <-s.learnOut:
 			s.debug(2, "Broadcast learn:", lrn)
-			nt.Broadcast(&nt.Message{ConfigID:s.configID,Tp: 4, Learn: &lrn}, s.conn, s.servers, s.retryLimit)
+			nt.Broadcast(&nt.Message{ConfigID: s.configID, Tp: 4, Learn: &lrn}, s.conn, s.servers, s.retryLimit)
 		case pre := <-s.preOut:
 			s.debug(2, "Broadcast prepare:", pre)
-			nt.Broadcast(&nt.Message{ConfigID:s.configID,Tp: 5, Prepare: &pre}, s.conn, s.servers, s.retryLimit)
+			nt.Broadcast(&nt.Message{ConfigID: s.configID, Tp: 5, Prepare: &pre}, s.conn, s.servers, s.retryLimit)
 		case prm := <-s.promiseOut:
 			s.debug(2, "Sending promise:", prm, "to", s.servers[prm.To])
-			nt.Send(&nt.Message{ConfigID:s.configID,Tp: 6, Promise: &prm}, s.conn, s.servers[prm.To], s.retryLimit)
+			nt.Send(&nt.Message{ConfigID: s.configID, Tp: 6, Promise: &prm}, s.conn, s.servers[prm.To], s.retryLimit)
 		case <-s.stop:
 			return
 		}
@@ -146,6 +153,16 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 	switch msg.Tp {
 	case nt.Value:
 		s.debug(1, "Incomming client value:", msg.Value)
+		if msg.Value.Reconfig != nil && s.leaderdetector.Leader() == s.id {
+			rsp := mp.Response{
+				ClientID:  msg.Value.ClientID,
+				ClientSeq: msg.Value.ClientSeq,
+				TxnRes: bank.TransactionResult{
+					ErrorString: "Reconfig",
+				},
+			}
+			nt.Send(&nt.Message{ConfigID: s.configID, Tp: 1, Response: &rsp}, s.conn, s.clients[rsp.ClientID], s.retryLimit)
+		}
 		s.proposer.DeliverClientValue(*msg.Value)
 		s.registerClient(msg.Value.ClientID)
 	case nt.Heartbeat:
@@ -174,7 +191,7 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 		// for i, servs := range s.servers{
 		// 	sout[i] = servs.String()
 		// }
-		nt.Send(&nt.Message{ConfigID:s.configID,Tp: nt.Servers, Servers: s.servers}, s.conn, msg.Servers[0], s.retryLimit)
+		nt.Send(&nt.Message{ConfigID: s.configID, Tp: nt.Servers, Servers: s.servers}, s.conn, msg.Servers[0], s.retryLimit)
 	}
 }
 
@@ -187,8 +204,8 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 	if !val.Value.Noop {
 		if val.Value.Reconfig != nil {
 			s.handleReconfigure(val)
-			for i:= range s.buffer {
-				delete(s.buffer,i)
+			for i := range s.buffer {
+				delete(s.buffer, i)
 			}
 		} else {
 			acc, ok := s.accounts[val.Value.AccountNum]
@@ -252,24 +269,21 @@ func (s *Server) handleReconfigure(val *mp.DecidedValue) {
 			break
 		}
 	}
-	s.sendToClient <- mp.Response{
-		ClientID:  val.Value.ClientID,
-		ClientSeq: val.Value.ClientSeq,
-		TxnRes: bank.TransactionResult{
-			ErrorString: "Reconfig",
-		},
-	}
 	s.reconfigure = false
 	s.debug(0, "Reconfiguration done.")
 	if !isIncluded {
 		s.StopServerLoop()
 		s.debug(0, "Server has stopped.")
 	} else {
-		servmsg := &nt.Message{ConfigID:s.configID,Tp: nt.Servers, Servers: s.servers}
+		servmsg := &nt.Message{ConfigID: s.configID, Tp: nt.Servers, Servers: s.servers}
 		for _, cli := range s.clients {
 			nt.Send(servmsg, s.conn, cli, s.retryLimit)
 		}
 	}
+	for _, msg := range s.msgBuffer {
+		s.lc <- *msg
+	}
+	s.msgBuffer = []*nt.Message{}
 }
 
 func (s *Server) initReconfigure(r *mp.Reconfig, id int) {
@@ -290,22 +304,22 @@ func (s *Server) initReconfigure(r *mp.Reconfig, id int) {
 	// 	delete(s.buffer, i)
 	// }
 	if r.Include {
-		s.debug(2,"I am included\nFilling reconfig message")
+		s.debug(2, "I am included\nFilling reconfig message")
 		r.Accounts = s.accounts
 		r.Adu = s.adu
 		s.configID++
 		r.ConfigID = s.configID
-		msg := &nt.Message{ConfigID:s.configID,Tp:nt.Reconfig, Reconfig: r}
-		s.debug(2,"Written msg: ",msg)
-		for _, ip:= range r.Ips{
-			if !nt.Contains(s.servers,ip){
-				nt.Send(msg,s.conn,ip,s.retryLimit)
-				s.debug(2,"Sending reconfig msg to: ",ip)
+		msg := &nt.Message{ConfigID: s.configID, Tp: nt.Reconfig, Reconfig: r}
+		s.debug(2, "Written msg: ", msg)
+		for _, ip := range r.Ips {
+			if !nt.Contains(s.servers, ip) {
+				nt.Send(msg, s.conn, ip, s.retryLimit)
+				s.debug(2, "Sending reconfig msg to: ", ip)
 			}
 		}
-	}else{
-		s.debug(2,"Waiting for info from other servers")
-		rec := <- s.rc
+	} else {
+		s.debug(2, "Waiting for info from other servers")
+		rec := <-s.rc
 		s.accounts = rec.Accounts
 		s.adu = rec.Adu
 		s.configID = rec.ConfigID
@@ -315,14 +329,14 @@ func (s *Server) initReconfigure(r *mp.Reconfig, id int) {
 	s.leaderdetector = ld.NewMonLeaderDetector(nodeIDs)
 	s.failuredetector = fd.NewEvtFailureDetector(s.id, nodeIDs, s.leaderdetector, s.delay, s.hbSend)
 	s.proposer = mp.NewProposer(s.id, len(nodeIDs), int(s.adu), s.configID, s.leaderdetector, s.preOut, s.accOut)
-	s.learner = mp.NewLearner(s.id, len(nodeIDs), s.decidedOut)
 	s.acceptor = mp.NewAcceptor(s.id, s.promiseOut, s.learnOut)
-	s.debug(2,"Server has reconfigured all mp modules")
+	s.learner = mp.NewLearner(s.id, len(nodeIDs), s.decidedOut)
+	s.debug(2, "Server has reconfigured all mp modules")
 	s.failuredetector.Start()
 	s.proposer.Start()
 	s.acceptor.Start()
 	s.learner.Start()
-	s.debug(2,"Initiated all mp modules")
+	s.debug(2, "Initiated all mp modules")
 }
 
 // 	if !s.reconfigure && s.leaderdetector.Leader() == s.id {

@@ -1,5 +1,7 @@
 package multipaxos
 
+import "sync"
+
 // Learner represents a learner as defined by the Multi-Paxos algorithm.
 type Learner struct {
 	id          int
@@ -12,6 +14,7 @@ type Learner struct {
 	learnIn     chan Learn
 	quorum      int
 	decidedVals map[string]Value
+	mux         sync.Locker
 }
 
 // NewLearner returns a new Multi-Paxos learner. It takes the
@@ -31,10 +34,11 @@ func NewLearner(id int, nrOfNodes int, decidedOut chan<- DecidedValue) *Learner 
 		rnd:         NoRound,
 		fromsMap:    make(map[SlotID][]bool),
 		decidedOut:  decidedOut,
-		stopIn:      make(chan struct{}),
-		learnIn:     make(chan Learn),
+		stopIn:      make(chan struct{}, 8),
+		learnIn:     make(chan Learn, 2048),
 		quorum:      nrOfNodes/2 + 1,
 		decidedVals: make(map[string]Value),
+		mux:         &sync.Mutex{},
 	}
 }
 
@@ -72,9 +76,13 @@ func (l *Learner) DeliverLearn(lrn Learn) {
 // slot that was decided and val contain the decided value. If handleLearn
 // returns false as output, then val and sid will have their zero value.
 func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) {
-	if l.nrNodes<=learn.From {
+	if l.nrNodes <= learn.From {
+		// fmt.Println("NrNodes: ", l.nrNodes)
+		// fmt.Println("Dropped learn: ", learn)
 		return Value{}, 0, false
 	}
+	l.mux.Lock()
+	defer l.mux.Unlock()
 	if l.rnd < learn.Rnd {
 		l.rnd = learn.Rnd
 		l.slotMap = make(map[SlotID][]Learn)
@@ -90,14 +98,14 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 		l.slotMap[learn.Slot] = append(l.slotMap[learn.Slot], learn)
 		l.fromsMap[learn.Slot][learn.From] = true
 	}
-	// 
 	for k, slt := range l.slotMap {
 		vals := make(map[string]int)
 		for _, lrs := range slt {
 			vals[lrs.Val.UniqueID]++
 		}
+		// fmt.Println("vals", vals)
 		v := 0
-		for uid, i := range vals {
+		for _, i := range vals {
 			if i >= l.quorum {
 				val := slt[v].Val
 				delete(l.slotMap, k)
@@ -106,11 +114,12 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 				return val, k, true
 			}
 			v++
-			if _, ok := l.decidedVals[uid]; ok {
-				delete(l.slotMap, k)
-				delete(l.fromsMap, k)
-			}
+			// if _, ok := l.decidedVals[uid]; ok {
+			// 	delete(l.slotMap, k)
+			// 	delete(l.fromsMap, k)
+			// }
 		}
 	}
+	// fmt.Println("Learn but no return.", l.quorum, learn)
 	return Value{}, 0, false
 }

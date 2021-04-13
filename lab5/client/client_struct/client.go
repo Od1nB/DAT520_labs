@@ -23,6 +23,7 @@ type Client struct {
 	debugLevel  int
 	selfAddress *net.UDPAddr
 	rc          chan *mp.Response
+	configId    int
 }
 
 func NewClient(id string, retryLimit int, debug int) *Client {
@@ -36,18 +37,18 @@ func NewClient(id string, retryLimit int, debug int) *Client {
 		scanner:     bufio.NewScanner(os.Stdin),
 		seq:         0,
 		servers:     []*net.UDPAddr{},
-		lc:          make(chan nt.Message),
+		lc:          make(chan nt.Message, 2048),
 		retryLimit:  retryLimit,
 		debugLevel:  debug,
 		selfAddress: selfAddress,
-		rc:          make(chan *mp.Response),
+		rc:          make(chan *mp.Response, 2048),
 	}
 }
 
 func (c *Client) getLeader(s string) {
 	server, err := net.ResolveUDPAddr("udp", s)
 	nt.Check(err)
-	nt.Send(&nt.Message{Tp: nt.Servers, Servers: []*net.UDPAddr{c.selfAddress}}, c.conn, server, c.retryLimit)
+	nt.Send(&nt.Message{Tp: nt.Servers, Servers: []*net.UDPAddr{c.selfAddress}, ConfigID: c.configId}, c.conn, server, c.retryLimit)
 	msg := <-c.lc
 	// ips := strings.Split(msg.Servers," ")
 	// for _, ip:= range ips {
@@ -85,7 +86,7 @@ func (c *Client) StartClientLoop(startServer string) {
 				}
 				v.Reconfig.Include = true
 				c.debug(1, v)
-				m := nt.Message{Value: v}
+				m := nt.Message{Value: v, ConfigID: c.configId}
 				nt.Broadcast(&m, c.conn, c.servers, c.retryLimit)
 				v.Reconfig.Include = false
 				for _, ip := range v.Reconfig.Ips {
@@ -102,15 +103,17 @@ func (c *Client) StartClientLoop(startServer string) {
 					AccountNum: accNum,
 					Txn:        *txn,
 				}
-				m := nt.Message{Value: v}
+				m := nt.Message{Value: v, ConfigID: c.configId}
 				nt.Broadcast(&m, c.conn, c.servers, c.retryLimit)
 			}
 		}
 		// wait for response
 		r := <-c.rc
-		// for r.TxnRes.ErrorString != "" && len(c.rc) != 0 {
-		// 	r = <- c.rc
-		// }
+		c.debug(2, "Bla bla", r.TxnRes.ErrorString, len(c.rc))
+		for r.TxnRes.ErrorString != "" && len(c.rc) != 0 {
+			c.debug(2, "Something", r)
+			r = <-c.rc
+		}
 		fmt.Println(r.TxnRes)
 	}
 }
@@ -135,6 +138,9 @@ func (c *Client) getTxn(text string) (accNum int, txn *bank.Transaction, r *mp.R
 			return 0, nil, nil, "Account Number can only be numbers!"
 		}
 	case "DEPOSIT":
+		if len(splitted) < 3 {
+			return 0, nil, nil, "This operation needs 3 inputs."
+		}
 		amount, err := strconv.Atoi(splitted[2])
 		if err == nil {
 			txn = &bank.Transaction{Op: bank.Deposit, Amount: amount}
@@ -146,6 +152,9 @@ func (c *Client) getTxn(text string) (accNum int, txn *bank.Transaction, r *mp.R
 			return 0, nil, nil, "Account Number can only be numbers!"
 		}
 	case "WITHDRAW":
+		if len(splitted) < 3 {
+			return 0, nil, nil, "This operation needs 3 inputs."
+		}
 		amount, err := strconv.Atoi(splitted[2])
 		if err == nil {
 			txn = &bank.Transaction{Op: bank.Withdrawal, Amount: amount}
@@ -182,8 +191,11 @@ func (c *Client) handleResponse() {
 	for {
 		msg := <-c.lc
 		if msg.Tp == nt.Servers {
-			// c.debug(1,"Recieved servers message: ",msg)
+			c.debug(1, "Recieved servers message: ", msg)
 			c.servers = msg.Servers
+			if msg.ConfigID > c.configId {
+				c.configId = msg.ConfigID
+			}
 		} else {
 			c.rc <- msg.Response
 		}

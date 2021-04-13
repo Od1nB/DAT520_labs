@@ -29,8 +29,8 @@ func NewAcceptor(id int, promiseOut chan<- Promise, learnOut chan<- Learn) *Acce
 		promiseOut: promiseOut,
 		learnOut:   learnOut,
 		stopIn:     make(chan struct{}),
-		prepareIn:  make(chan Prepare),
-		acceptIn:   make(chan Accept),
+		prepareIn:  make(chan Prepare, 2048),
+		acceptIn:   make(chan Accept, 2048),
 		rnd:        NoRound,
 	}
 }
