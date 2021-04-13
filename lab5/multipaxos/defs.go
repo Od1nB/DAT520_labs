@@ -42,7 +42,7 @@ type Value struct {
 	Noop       bool
 	AccountNum int
 	Txn        bank.Transaction
-	Reconfig   Reconfig
+	Reconfig   *Reconfig
 }
 
 type Reconfig struct {
@@ -64,7 +64,8 @@ func (v Value) Equals(ov Value) bool {
 		v.Noop == ov.Noop &&
 		v.AccountNum == ov.AccountNum &&
 		v.Txn == ov.Txn &&
-		v.Reconfig.ConfigID == ov.Reconfig.ConfigID
+		((v.Reconfig == nil && ov.Reconfig == nil )||
+		v.Reconfig.ConfigID == ov.Reconfig.ConfigID)
 }
 
 // String returns a string representation of value v.

@@ -34,7 +34,7 @@ type Proposer struct {
 	promiseIn  chan Promise
 	cvalIn     chan Value
 
-	stopwait bool
+	// stopwait bool
 
 	incDcd chan struct{}
 	stop   chan struct{}
@@ -113,9 +113,7 @@ func (p *Proposer) Start() {
 				if p.id != p.leader {
 					continue
 				}
-				if p.stopwait {
-					cval.Noop = true
-				}
+				
 				p.requestsIn.PushBack(cval)
 				if !p.phaseOneDone {
 					continue
@@ -140,10 +138,7 @@ func (p *Proposer) Start() {
 					p.startPhaseOne()
 				}
 			case <-p.stop:
-				if p.stopwait {
-					return
-				}
-				p.stopwait = true
+				return
 			}
 		}
 	}()

@@ -36,7 +36,8 @@ type Message struct {
 	Promise      *mp.Promise
 	Response     *mp.Response
 	Reconfig     *mp.Reconfig
-	Servers       []*net.UDPAddr
+	Servers      []*net.UDPAddr
+	ConfigID     int
 }
 
 func Send(msg *Message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) error {
@@ -82,4 +83,13 @@ func Check(err error) {
 		fmt.Fprintf(os.Stderr, "Fatal error: %s\n", err.Error())
 		os.Exit(1)
 	}
+}
+
+func Contains(servers []*net.UDPAddr, e *net.UDPAddr) bool {
+	for _, a := range servers {
+		if string(a.IP) == string(e.IP) && a.Port == e.Port {
+			return true
+		}
+	}
+	return false
 }

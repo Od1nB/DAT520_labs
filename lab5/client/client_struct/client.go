@@ -81,11 +81,19 @@ func (c *Client) StartClientLoop(startServer string) {
 				v := &mp.Value{
 					ClientID:  c.id,
 					ClientSeq: c.seq,
-					Reconfig:  *reconfig,
+					Reconfig:  reconfig,
 				}
+				v.Reconfig.Include = true
 				c.debug(1, v)
-				m := nt.Message{Tp: nt.Reconfig, Value: v}
+				m := nt.Message{Value: v}
 				nt.Broadcast(&m, c.conn, c.servers, c.retryLimit)
+				v.Reconfig.Include = false
+				for _, ip := range v.Reconfig.Ips {
+					if !nt.Contains(c.servers, ip) {
+						nt.Send(&m, c.conn, ip, c.retryLimit)
+					}
+				}
+
 			} else {
 				v := &mp.Value{
 					ClientID:   c.id,
@@ -100,6 +108,9 @@ func (c *Client) StartClientLoop(startServer string) {
 		}
 		// wait for response
 		r := <-c.rc
+		// for r.TxnRes.ErrorString != "" && len(c.rc) != 0 {
+		// 	r = <- c.rc
+		// }
 		fmt.Println(r.TxnRes)
 	}
 }
@@ -171,6 +182,7 @@ func (c *Client) handleResponse() {
 	for {
 		msg := <-c.lc
 		if msg.Tp == nt.Servers {
+			// c.debug(1,"Recieved servers message: ",msg)
 			c.servers = msg.Servers
 		} else {
 			c.rc <- msg.Response

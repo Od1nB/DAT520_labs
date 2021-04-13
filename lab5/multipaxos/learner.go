@@ -72,6 +72,9 @@ func (l *Learner) DeliverLearn(lrn Learn) {
 // slot that was decided and val contain the decided value. If handleLearn
 // returns false as output, then val and sid will have their zero value.
 func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) {
+	if l.nrNodes<=learn.From {
+		return Value{}, 0, false
+	}
 	if l.rnd < learn.Rnd {
 		l.rnd = learn.Rnd
 		l.slotMap = make(map[SlotID][]Learn)
@@ -87,6 +90,7 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 		l.slotMap[learn.Slot] = append(l.slotMap[learn.Slot], learn)
 		l.fromsMap[learn.Slot][learn.From] = true
 	}
+	// 
 	for k, slt := range l.slotMap {
 		vals := make(map[string]int)
 		for _, lrs := range slt {
