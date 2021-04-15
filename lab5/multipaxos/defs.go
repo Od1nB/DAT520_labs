@@ -54,7 +54,7 @@ type Reconfig struct {
 }
 
 func (r Reconfig) String() string {
-	return fmt.Sprintf("ID: %d, Ips: %v, Accounts: %v, Adu: %d, Include: %v", r.ConfigID, r.Ips, r.Accounts, r.Adu, r.Include)
+	return fmt.Sprintf("Reconfig{ID: %d, Ips: %v, Accounts: %v, Adu: %d, Include: %v}", r.ConfigID, r.Ips, r.Accounts, r.Adu, r.Include)
 }
 
 func (v Value) Equals(ov Value) bool {
@@ -64,14 +64,14 @@ func (v Value) Equals(ov Value) bool {
 		v.Noop == ov.Noop &&
 		v.AccountNum == ov.AccountNum &&
 		v.Txn == ov.Txn &&
-		((v.Reconfig == nil && ov.Reconfig == nil )||
-		v.Reconfig.ConfigID == ov.Reconfig.ConfigID)
+		((v.Reconfig == nil && ov.Reconfig == nil) ||
+			v.Reconfig.ConfigID == ov.Reconfig.ConfigID)
 }
 
 // String returns a string representation of value v.
 func (v Value) String() string {
 	if v.Noop {
-		return fmt.Sprintf("No-op value")
+		return "No-op value"
 	}
 	return fmt.Sprintf("Value{ID: %s, ClientID: %s, ClientSeq: %d, Account number: %d, Transaction: %s, Reconfig: %s}",
 		v.UniqueID, v.ClientID, v.ClientSeq, v.AccountNum, v.Txn, v.Reconfig)

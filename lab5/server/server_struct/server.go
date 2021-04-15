@@ -150,6 +150,7 @@ func (s *Server) serverLoop() {
 }
 
 func (s *Server) handleIncomming(msg *nt.Message) {
+	s.debug(2, "Incomming message", msg.Tp, msg.ConfigID)
 	switch msg.Tp {
 	case nt.Value:
 		s.debug(1, "Incomming client value:", msg.Value)
@@ -320,6 +321,7 @@ func (s *Server) initReconfigure(r *mp.Reconfig, id int) {
 	} else {
 		s.debug(2, "Waiting for info from other servers")
 		rec := <-s.rc
+		s.debug(2, "Got reconfig", rec)
 		s.accounts = rec.Accounts
 		s.adu = rec.Adu
 		s.configID = rec.ConfigID

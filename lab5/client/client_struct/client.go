@@ -88,9 +88,11 @@ func (c *Client) StartClientLoop(startServer string) {
 				c.debug(1, v)
 				m := nt.Message{Value: v, ConfigID: c.configId}
 				nt.Broadcast(&m, c.conn, c.servers, c.retryLimit)
-				v.Reconfig.Include = false
+				m.Value.Reconfig.Include = false
+				m.ConfigID = 0
 				for _, ip := range v.Reconfig.Ips {
 					if !nt.Contains(c.servers, ip) {
+						c.debug(2, "Introducing new server:", ip)
 						nt.Send(&m, c.conn, ip, c.retryLimit)
 					}
 				}
@@ -108,6 +110,8 @@ func (c *Client) StartClientLoop(startServer string) {
 			}
 		}
 		// wait for response
+
+		c.debug(2, "Waiting for response")
 		r := <-c.rc
 		c.debug(2, "Bla bla", r.TxnRes.ErrorString, len(c.rc))
 		for r.TxnRes.ErrorString != "" && len(c.rc) != 0 {
