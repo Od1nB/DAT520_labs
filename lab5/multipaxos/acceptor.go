@@ -1,6 +1,9 @@
 package multipaxos
 
-import "sort"
+import (
+	"sort"
+	"sync"
+)
 
 // Acceptor represents an acceptor as defined by the Multi-Paxos algorithm.
 type Acceptor struct {
@@ -13,6 +16,7 @@ type Acceptor struct {
 	acceptIn   chan Accept
 	rnd        Round
 	slots      []PromiseSlot
+	mux        sync.Mutex
 }
 
 // NewAcceptor returns a new Multi-Paxos acceptor.
@@ -32,6 +36,7 @@ func NewAcceptor(id int, promiseOut chan<- Promise, learnOut chan<- Learn) *Acce
 		prepareIn:  make(chan Prepare, 2048),
 		acceptIn:   make(chan Accept, 2048),
 		rnd:        NoRound,
+		mux:        sync.Mutex{},
 	}
 }
 
@@ -40,6 +45,7 @@ func NewAcceptor(id int, promiseOut chan<- Promise, learnOut chan<- Learn) *Acce
 func (a *Acceptor) Start() {
 	go func() {
 		for {
+			a.mux.Lock()
 			select {
 			case prp := <-a.prepareIn:
 				promise, output := a.handlePrepare(prp)
@@ -52,8 +58,10 @@ func (a *Acceptor) Start() {
 					a.learnOut <- learn
 				}
 			case <-a.stopIn:
+				a.mux.Unlock()
 				return
 			}
+			a.mux.Unlock()
 		}
 	}()
 }

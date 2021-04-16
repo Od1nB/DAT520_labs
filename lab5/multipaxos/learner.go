@@ -47,6 +47,7 @@ func NewLearner(id int, nrOfNodes int, decidedOut chan<- DecidedValue) *Learner 
 func (l *Learner) Start() {
 	go func() {
 		for {
+			l.mux.Lock()
 			select {
 			case lrn := <-l.learnIn:
 				val, sid, output := l.handleLearn(lrn)
@@ -54,8 +55,10 @@ func (l *Learner) Start() {
 					l.decidedOut <- DecidedValue{SlotID: sid, Value: val}
 				}
 			case <-l.stopIn:
+				l.mux.Unlock()
 				return
 			}
+			l.mux.Unlock()
 		}
 	}()
 }
@@ -81,8 +84,6 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 		// fmt.Println("Dropped learn: ", learn)
 		return Value{}, 0, false
 	}
-	l.mux.Lock()
-	defer l.mux.Unlock()
 	if l.rnd < learn.Rnd {
 		l.rnd = learn.Rnd
 		l.slotMap = make(map[SlotID][]Learn)

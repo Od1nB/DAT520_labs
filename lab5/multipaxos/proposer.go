@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"dat520/lab3/leaderdetector"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -40,6 +41,8 @@ type Proposer struct {
 	stop   chan struct{}
 
 	configID int
+
+	mux sync.Mutex
 }
 
 // NewProposer returns a new Multi-Paxos proposer. It takes the following
@@ -88,6 +91,7 @@ func NewProposer(id, nrOfNodes, adu, configID int, ld leaderdetector.LeaderDetec
 		stop:   make(chan struct{}),
 
 		configID: configID,
+		mux:      sync.Mutex{},
 	}
 }
 
@@ -99,7 +103,9 @@ func (p *Proposer) Start() {
 			select {
 			case prm := <-p.promiseIn:
 				accepts, output := p.handlePromise(prm)
+				p.mux.Lock()
 				if !output {
+					p.mux.Unlock()
 					continue
 				}
 				p.nextSlot = p.adu + 1
@@ -108,35 +114,56 @@ func (p *Proposer) Start() {
 				for _, acc := range accepts {
 					p.acceptsOut.PushBack(acc)
 				}
+				p.mux.Unlock()
 				p.sendAccept()
 			case cval := <-p.cvalIn:
+				p.mux.Lock()
+
 				if p.id != p.leader {
+					p.mux.Unlock()
+
 					continue
 				}
-				
+
 				p.requestsIn.PushBack(cval)
 				if !p.phaseOneDone {
+					p.mux.Unlock()
+
 					continue
 				}
+				p.mux.Unlock()
+
 				p.sendAccept()
 			case <-p.incDcd:
+				p.mux.Lock()
+
 				p.adu++
 				if p.id != p.leader {
+					p.mux.Unlock()
+
 					continue
 				}
 				if !p.phaseOneDone {
+					p.mux.Unlock()
+
 					continue
 				}
+				p.mux.Unlock()
+
 				p.sendAccept()
 			case <-p.phaseOneProgressTicker.C:
+				p.mux.Lock()
 				if p.id == p.leader && !p.phaseOneDone {
 					p.startPhaseOne()
 				}
+				p.mux.Unlock()
 			case leader := <-trustMsgs:
+				p.mux.Lock()
 				p.leader = leader
 				if leader == p.id {
 					p.startPhaseOne()
 				}
+				p.mux.Unlock()
 			case <-p.stop:
 				return
 			}
@@ -175,6 +202,8 @@ func (p *Proposer) GetAlreadyDecidedUpTo() SlotID {
 // accept messages. If handlePromise returns false as output, then accs will be
 // a nil slice.
 func (p *Proposer) handlePromise(prm Promise) (accs []Accept, output bool) {
+	p.mux.Lock()
+	defer p.mux.Unlock()
 	if prm.Rnd == p.crnd && p.isUnique(prm.From) {
 		p.promiseCount++
 		p.promises = append(p.promises, &prm)
@@ -206,6 +235,8 @@ func (p *Proposer) startPhaseOne() {
 // value from the client request queue if not empty. It does not send an accept
 // if the previous slot has not been decided yet.
 func (p *Proposer) sendAccept() {
+	p.mux.Lock()
+	defer p.mux.Unlock()
 	const alpha = 1
 	if !(p.nextSlot <= p.adu+alpha) {
 		// We must wait for the next slot to be decided before we can
