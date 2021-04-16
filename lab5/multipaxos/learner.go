@@ -123,7 +123,7 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 		}
 	}
 	// fmt.Println("Learn but no return.", l.quorum, learn)
-	// fmt.Println("Round learner: ", l.rnd, "\tRound learn msg:", learn.Rnd)
+	// fmt.Println("Round learner: ", l.rnd, "\tRound learn msg:", learn.Rnd, learn.Val.UniqueID)
 	// fmt.Println("Decided values: ", l.decidedVals)
 	return Value{}, 0, false
 }

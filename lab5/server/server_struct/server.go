@@ -185,8 +185,10 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 		s.debug(2, "Incomming accept:", msg.Accept)
 		s.acceptor.DeliverAccept(*msg.Accept)
 	case nt.Learn:
-		s.debug(2, "Incomming learn:", msg.Learn)
-		s.learner.DeliverLearn(*msg.Learn)
+		if msg.ConfigID == s.configID {
+			s.debug(2, "Incomming learn:", msg.Learn)
+			s.learner.DeliverLearn(*msg.Learn)
+		}
 	case nt.Prepare:
 		s.debug(2, "Incomming prepare:", msg.Prepare)
 		s.acceptor.DeliverPrepare(*msg.Prepare)
@@ -267,7 +269,7 @@ func (s *Server) registerClient(id string) {
 }
 
 func (s *Server) handleReconfigure(val *mp.DecidedValue) {
-	s.debug(1, "Processing reconfig: ", val.Value.Reconfig)
+	s.debug(2, "Processing reconfig: ", val.Value.Reconfig)
 	s.reconfigure = true
 	s.proposer.Stop()
 	s.acceptor.Stop()
@@ -279,7 +281,7 @@ func (s *Server) handleReconfigure(val *mp.DecidedValue) {
 	ownIP := s.servers[s.id].String()
 	for i, v := range r.Ips {
 		if v.String() == ownIP {
-			s.debug(1, "Found own ip: ", v)
+			s.debug(2, "Found own ip: ", v)
 			s.initReconfigure(r, i)
 			isIncluded = true
 			break
