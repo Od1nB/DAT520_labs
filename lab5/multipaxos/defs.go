@@ -201,22 +201,22 @@ var (
 		ClientSeq:  4,
 		AccountNum: 3,
 	}
-	testingValueFour = Value{
-		UniqueID:   "4",
-		ClientID:   "1312",
-		ClientSeq:  4,
+	testingValueOne2 = Value{
+		UniqueID:   "02",
+		ClientID:   "1234",
+		ClientSeq:  42,
 		AccountNum: 1,
 	}
-	testingValueFive = Value{
-		UniqueID:   "5",
-		ClientID:   "4122",
-		ClientSeq:  34,
+	testingValueTwo2 = Value{
+		UniqueID:   "12",
+		ClientID:   "5678",
+		ClientSeq:  99,
 		AccountNum: 2,
 	}
-	testingValueSix = Value{
-		UniqueID:   "6",
-		ClientID:   "4512",
-		ClientSeq:  245,
+	testingValueThree2 = Value{
+		UniqueID:   "22",
+		ClientID:   "1369",
+		ClientSeq:  4,
 		AccountNum: 3,
 	}
 )

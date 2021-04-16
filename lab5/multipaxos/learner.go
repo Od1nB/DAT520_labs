@@ -1,6 +1,8 @@
 package multipaxos
 
-import "sync"
+import (
+	"sync"
+)
 
 // Learner represents a learner as defined by the Multi-Paxos algorithm.
 type Learner struct {
@@ -104,10 +106,9 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 		for _, lrs := range slt {
 			vals[lrs.Val.UniqueID]++
 		}
-		// fmt.Println("vals", vals)
 		v := 0
-		for _, i := range vals {
-			if i >= l.quorum {
+		for uid, i := range vals {
+			if _, ok := l.decidedVals[uid]; !ok && i >= l.quorum {
 				val := slt[v].Val
 				delete(l.slotMap, k)
 				delete(l.fromsMap, k)
@@ -115,12 +116,14 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 				return val, k, true
 			}
 			v++
-			// if _, ok := l.decidedVals[uid]; ok {
-			// 	delete(l.slotMap, k)
-			// 	delete(l.fromsMap, k)
-			// }
+			if _, ok := l.decidedVals[uid]; ok {
+				delete(l.slotMap, k)
+				delete(l.fromsMap, k)
+			}
 		}
 	}
 	// fmt.Println("Learn but no return.", l.quorum, learn)
+	// fmt.Println("Round learner: ", l.rnd, "\tRound learn msg:", learn.Rnd)
+	// fmt.Println("Decided values: ", l.decidedVals)
 	return Value{}, 0, false
 }

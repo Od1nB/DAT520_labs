@@ -43,6 +43,8 @@ type Server struct {
 	configID        int
 	rc              chan *mp.Reconfig
 	msgBuffer       []*nt.Message
+	dmux            sync.Mutex
+	imux            sync.Mutex
 	mux             sync.Mutex
 }
 
@@ -91,6 +93,8 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNode
 		delay:           d,
 		rc:              make(chan *mp.Reconfig, 2048),
 		msgBuffer:       []*nt.Message{},
+		dmux:            sync.Mutex{},
+		imux:            sync.Mutex{},
 		mux:             sync.Mutex{},
 	}
 }
@@ -108,6 +112,7 @@ func (s *Server) StartServerLoop() {
 
 func (s *Server) serverLoop() {
 	for {
+		s.mux.Lock()
 		select {
 		case msg := <-s.lc:
 			// debug messages for incomming messages are handled in s.handleIncomming
@@ -117,20 +122,21 @@ func (s *Server) serverLoop() {
 			// 	s.debug(2, "Incoming message ", msg)
 			// }
 			if msg.Tp == nt.Servers || msg.Tp == nt.Reconfig || (!s.reconfigure && msg.ConfigID == s.configID) {
-				s.handleIncomming(&msg)
+				go s.handleIncomming(&msg)
 			} else if msg.ConfigID > s.configID {
 				s.debug(2, "Buffer message", msg)
 				s.msgBuffer = append(s.msgBuffer, &msg)
+			} else {
+				s.debug(2, "Discard message", msg)
 			}
 			// }
 		case dec := <-s.decidedOut:
 			go s.handleDecidedValue(&dec)
 		case rsp := <-s.sendToClient:
-			if s.leaderdetector.Leader() != s.id {
-				continue
+			if s.leaderdetector.Leader() == s.id {
+				s.debug(1, "Sending response value:", rsp, "to", s.clients[rsp.ClientID])
+				nt.Send(&nt.Message{ConfigID: s.configID, Tp: 1, Response: &rsp}, s.conn, s.clients[rsp.ClientID], s.retryLimit)
 			}
-			s.debug(1, "Sending response value:", rsp, "to", s.clients[rsp.ClientID])
-			nt.Send(&nt.Message{ConfigID: s.configID, Tp: 1, Response: &rsp}, s.conn, s.clients[rsp.ClientID], s.retryLimit)
 		case hb := <-s.hbSend:
 			s.debug(3, "Sending heartbeat:", hb, "to", s.servers[hb.To])
 			nt.Send(&nt.Message{ConfigID: s.configID, Tp: 2, Heartbeat: &hb}, s.conn, s.servers[hb.To], s.retryLimit)
@@ -147,13 +153,16 @@ func (s *Server) serverLoop() {
 			s.debug(2, "Sending promise:", prm, "to", s.servers[prm.To])
 			nt.Send(&nt.Message{ConfigID: s.configID, Tp: 6, Promise: &prm}, s.conn, s.servers[prm.To], s.retryLimit)
 		case <-s.stop:
+			s.mux.Unlock()
 			return
 		}
+		s.mux.Unlock()
 	}
 }
 
 func (s *Server) handleIncomming(msg *nt.Message) {
-	s.debug(3, "Incomming message", msg.Tp, msg.ConfigID)
+	s.imux.Lock()
+	defer s.imux.Unlock()
 	switch msg.Tp {
 	case nt.Value:
 		s.debug(1, "Incomming client value:", msg.Value)
@@ -186,7 +195,7 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 		s.proposer.DeliverPromise(*msg.Promise)
 	case nt.Reconfig:
 		s.debug(1, "Incoming reconfigure: ", msg.Reconfig)
-			s.rc <- msg.Reconfig
+		s.rc <- msg.Reconfig
 	case nt.Servers:
 		s.debug(1, "Incoming servers request: ", msg)
 		// sout := make([]string,len(s.servers))
@@ -198,10 +207,10 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 }
 
 func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.dmux.Lock()
 	if val.SlotID > s.adu+1 {
 		s.buffer[val.SlotID] = val
+		s.dmux.Unlock()
 		return
 	}
 	s.debug(1, "Value decided: ", val.Value)
@@ -239,6 +248,7 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 	s.proposer.IncrementAllDecidedUpTo()
 	s.debug(2, "ADU", s.adu)
 	delete(s.buffer, s.adu)
+	s.dmux.Unlock()
 	if v, ok := s.buffer[s.adu+1]; ok {
 		s.handleDecidedValue(v)
 	}
@@ -330,12 +340,12 @@ func (s *Server) initReconfigure(r *mp.Reconfig, id int) {
 		for len(s.rc) != 0 {
 			s.debug(2, "Extra reconfig: ", r)
 			recbuff := <-s.rc
-			if recbuff.ConfigID == s.configID{
+			if recbuff.ConfigID == s.configID {
 				rec = recbuff
 			}
 		}
-		if rec.ConfigID != s.configID{
-			s.debug(1, "Something went terribly wrong ", rec," ",r)
+		if rec.ConfigID != s.configID {
+			s.debug(1, "Something went terribly wrong ", rec, " ", r)
 		}
 
 		s.debug(2, "Got reconfig", rec)

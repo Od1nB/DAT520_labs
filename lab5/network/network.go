@@ -62,16 +62,17 @@ func Broadcast(msg *Message, conn *net.UDPConn, to []*net.UDPAddr, retryLimit in
 }
 
 func Listen(conn *net.UDPConn, lc chan Message) {
-	b := make([]byte, 2048, 2048)
+	b := make([]byte, 2048)
 	for {
 		n, _, err := conn.ReadFromUDP(b)
-		// fmt.Println(string(b))
 		if err != nil {
+			fmt.Println("Listen error:", err, " for message ", string(b))
 			continue
 		}
 		msg := Message{}
 		err = json.Unmarshal(b[:n], &msg)
 		if err != nil {
+			fmt.Println("Listen error:", err, " for message ", string(b))
 			continue
 		}
 		lc <- msg
