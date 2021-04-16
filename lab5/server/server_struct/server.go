@@ -186,9 +186,7 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 		s.proposer.DeliverPromise(*msg.Promise)
 	case nt.Reconfig:
 		s.debug(1, "Incoming reconfigure: ", msg.Reconfig)
-		if s.reconfigure {
 			s.rc <- msg.Reconfig
-		}
 	case nt.Servers:
 		s.debug(1, "Incoming servers request: ", msg)
 		// sout := make([]string,len(s.servers))
@@ -329,6 +327,17 @@ func (s *Server) initReconfigure(r *mp.Reconfig, id int) {
 	} else {
 		s.debug(2, "Waiting for info from other servers")
 		rec := <-s.rc
+		for len(s.rc) != 0 {
+			s.debug(2, "Extra reconfig: ", r)
+			recbuff := <-s.rc
+			if recbuff.ConfigID == s.configID{
+				rec = recbuff
+			}
+		}
+		if rec.ConfigID != s.configID{
+			s.debug(1, "Something went terribly wrong ", rec," ",r)
+		}
+
 		s.debug(2, "Got reconfig", rec)
 		s.accounts = rec.Accounts
 		s.adu = rec.Adu
