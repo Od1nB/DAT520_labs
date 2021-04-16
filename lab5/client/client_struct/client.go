@@ -57,6 +57,7 @@ func (c *Client) getLeader(s string) {
 	// 	c.servers = append(c.servers, server)
 	// }
 	c.servers = msg.Servers
+	c.configId = msg.ConfigID
 }
 
 func (c *Client) StartClientLoop(startServer string) {
@@ -182,7 +183,7 @@ func (c *Client) getTxn(text string) (accNum int, txn *bank.Transaction, r *mp.R
 			}
 			ips[i] = addr
 		}
-		r = &mp.Reconfig{Ips: ips}
+		r = &mp.Reconfig{Ips: ips, ConfigID: c.configId + 1}
 	case "DEBUG":
 		return 0, nil, nil, fmt.Sprintf("Own ip: %v, %s\nServers: %v", c.selfAddress.IP, c.id, c.servers)
 	default:

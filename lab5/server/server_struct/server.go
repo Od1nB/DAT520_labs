@@ -8,6 +8,7 @@ import (
 	nt "dat520/lab5/network"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -42,6 +43,7 @@ type Server struct {
 	configID        int
 	rc              chan *mp.Reconfig
 	msgBuffer       []*nt.Message
+	mux             sync.Mutex
 }
 
 func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNodes int, debug int) *Server {
@@ -89,6 +91,7 @@ func NewServer(id, delay, retryLimit int, addresses []*net.UDPAddr, numberOfNode
 		delay:           d,
 		rc:              make(chan *mp.Reconfig, 2048),
 		msgBuffer:       []*nt.Message{},
+		mux:             sync.Mutex{},
 	}
 }
 
@@ -114,7 +117,7 @@ func (s *Server) serverLoop() {
 			// 	s.debug(2, "Incoming message ", msg)
 			// }
 			if msg.Tp == nt.Servers || msg.Tp == nt.Reconfig || (!s.reconfigure && msg.ConfigID == s.configID) {
-				go s.handleIncomming(&msg)
+				s.handleIncomming(&msg)
 			} else if msg.ConfigID > s.configID {
 				s.debug(2, "Buffer message", msg)
 				s.msgBuffer = append(s.msgBuffer, &msg)
@@ -150,7 +153,7 @@ func (s *Server) serverLoop() {
 }
 
 func (s *Server) handleIncomming(msg *nt.Message) {
-	s.debug(2, "Incomming message", msg.Tp, msg.ConfigID)
+	s.debug(3, "Incomming message", msg.Tp, msg.ConfigID)
 	switch msg.Tp {
 	case nt.Value:
 		s.debug(1, "Incomming client value:", msg.Value)
@@ -197,6 +200,8 @@ func (s *Server) handleIncomming(msg *nt.Message) {
 }
 
 func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
 	if val.SlotID > s.adu+1 {
 		s.buffer[val.SlotID] = val
 		return
@@ -204,9 +209,11 @@ func (s *Server) handleDecidedValue(val *mp.DecidedValue) {
 	s.debug(1, "Value decided: ", val.Value)
 	if !val.Value.Noop {
 		if val.Value.Reconfig != nil {
-			s.handleReconfigure(val)
-			for i := range s.buffer {
-				delete(s.buffer, i)
+			if val.Value.Reconfig.ConfigID > s.configID {
+				s.handleReconfigure(val)
+				for i := range s.buffer {
+					delete(s.buffer, i)
+				}
 			}
 		} else {
 			acc, ok := s.accounts[val.Value.AccountNum]
@@ -304,12 +311,13 @@ func (s *Server) initReconfigure(r *mp.Reconfig, id int) {
 	// 	}
 	// 	delete(s.buffer, i)
 	// }
+	s.configID = r.ConfigID
 	if r.Include {
 		s.debug(2, "I am included\nFilling reconfig message")
 		r.Accounts = s.accounts
 		r.Adu = s.adu
-		s.configID++
-		r.ConfigID = s.configID
+		// s.configID++
+		// r.ConfigID = s.configID
 		msg := &nt.Message{ConfigID: s.configID, Tp: nt.Reconfig, Reconfig: r}
 		s.debug(2, "Written msg: ", msg)
 		for _, ip := range r.Ips {
@@ -324,7 +332,7 @@ func (s *Server) initReconfigure(r *mp.Reconfig, id int) {
 		s.debug(2, "Got reconfig", rec)
 		s.accounts = rec.Accounts
 		s.adu = rec.Adu
-		s.configID = rec.ConfigID
+		// s.configID = rec.ConfigID
 	}
 	s.id = id
 	s.servers = r.Ips
