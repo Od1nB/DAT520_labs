@@ -48,11 +48,10 @@ type Reconfig struct {
 	Accounts string
 	Adu      SlotID
 	Include  bool
-	ConfigID int
 }
 
 func (r Reconfig) String() string {
-	return fmt.Sprintf("Ips: %v, Accounts: %v, Adu: %d, Include: %v, ConfigID: %d", r.Ips, r.Accounts, r.Adu, r.Include,r.ConfigID)
+	return fmt.Sprintf("Ips: %v, Accounts: %v, Adu: %d, Include: %v", r.Ips, r.Accounts, r.Adu, r.Include)
 }
 
 // String returns a string representation of value v.

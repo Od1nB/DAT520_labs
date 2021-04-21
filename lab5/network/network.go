@@ -36,8 +36,7 @@ type Message struct {
 	Promise      *mp.Promise
 	Response     *mp.Response
 	Reconfig     *mp.Reconfig
-	Servers      []*net.UDPAddr
-	ConfigID     int
+	Servers       []*net.UDPAddr
 }
 
 func Send(msg *Message, conn *net.UDPConn, to *net.UDPAddr, retryLimit int) error {
