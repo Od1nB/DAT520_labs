@@ -13,18 +13,17 @@ import (
 )
 
 type Client struct {
-	id            string
-	conn          *net.UDPConn
-	scanner       *bufio.Scanner
-	seq           int
-	servers       []*net.UDPAddr
-	decidedValues map[string][]mp.DecidedValue
-	commands      map[int]mp.Value
-	lc            chan nt.Message
-	retryLimit    int
-	debugLevel    int
-	selfAddress   *net.UDPAddr
-	rc            chan *mp.Response
+	id          string
+	conn        *net.UDPConn
+	scanner     *bufio.Scanner
+	seq         int
+	servers     []*net.UDPAddr
+	lc          chan nt.Message
+	retryLimit  int
+	debugLevel  int
+	selfAddress *net.UDPAddr
+	rc          chan *mp.Response
+	configId    int
 }
 
 func NewClient(id string, retryLimit int, debug int) *Client {
@@ -33,25 +32,23 @@ func NewClient(id string, retryLimit int, debug int) *Client {
 	cliconn, err := net.ListenUDP("udp", selfAddress)
 	nt.Check(err)
 	return &Client{
-		id:            id,
-		conn:          cliconn,
-		scanner:       bufio.NewScanner(os.Stdin),
-		seq:           0,
-		servers:       []*net.UDPAddr{},
-		decidedValues: make(map[string][]mp.DecidedValue),
-		commands:      make(map[int]mp.Value),
-		lc:            make(chan nt.Message),
-		retryLimit:    retryLimit,
-		debugLevel:    debug,
-		selfAddress:   selfAddress,
-		rc:            make(chan *mp.Response),
+		id:          id,
+		conn:        cliconn,
+		scanner:     bufio.NewScanner(os.Stdin),
+		seq:         0,
+		servers:     []*net.UDPAddr{},
+		lc:          make(chan nt.Message, 2048),
+		retryLimit:  retryLimit,
+		debugLevel:  debug,
+		selfAddress: selfAddress,
+		rc:          make(chan *mp.Response, 2048),
 	}
 }
 
 func (c *Client) getLeader(s string) {
 	server, err := net.ResolveUDPAddr("udp", s)
 	nt.Check(err)
-	nt.Send(&nt.Message{Tp: nt.Servers, Servers: []*net.UDPAddr{c.selfAddress}}, c.conn, server, c.retryLimit)
+	nt.Send(&nt.Message{Tp: nt.Servers, Servers: []*net.UDPAddr{c.selfAddress}, ConfigID: c.configId}, c.conn, server, c.retryLimit)
 	msg := <-c.lc
 	// ips := strings.Split(msg.Servers," ")
 	// for _, ip:= range ips {
@@ -60,6 +57,7 @@ func (c *Client) getLeader(s string) {
 	// 	c.servers = append(c.servers, server)
 	// }
 	c.servers = msg.Servers
+	c.configId = msg.ConfigID
 }
 
 func (c *Client) StartClientLoop(startServer string) {
@@ -85,12 +83,21 @@ func (c *Client) StartClientLoop(startServer string) {
 				v := &mp.Value{
 					ClientID:  c.id,
 					ClientSeq: c.seq,
-					Reconfig:  *reconfig,
+					Reconfig:  reconfig,
 				}
+				v.Reconfig.Include = true
 				c.debug(1, v)
-				c.commands[c.seq] = *v
-				m := nt.Message{Tp: nt.Reconfig, Value: v}
+				m := nt.Message{Value: v, ConfigID: c.configId}
 				nt.Broadcast(&m, c.conn, c.servers, c.retryLimit)
+				m.Value.Reconfig.Include = false
+				m.ConfigID = 0
+				for _, ip := range v.Reconfig.Ips {
+					if !nt.Contains(c.servers, ip) {
+						c.debug(2, "Introducing new server:", ip)
+						nt.Send(&m, c.conn, ip, c.retryLimit)
+					}
+				}
+
 			} else {
 				v := &mp.Value{
 					ClientID:   c.id,
@@ -99,13 +106,19 @@ func (c *Client) StartClientLoop(startServer string) {
 					AccountNum: accNum,
 					Txn:        *txn,
 				}
-				c.commands[c.seq] = *v
-				m := nt.Message{Value: v}
+				m := nt.Message{Value: v, ConfigID: c.configId}
 				nt.Broadcast(&m, c.conn, c.servers, c.retryLimit)
 			}
 		}
 		// wait for response
-		r := <- c.rc
+
+		c.debug(2, "Waiting for response")
+		r := <-c.rc
+		c.debug(2, "Bla bla", r.TxnRes.ErrorString, len(c.rc))
+		for r.TxnRes.ErrorString != "" && len(c.rc) != 0 {
+			c.debug(2, "Something", r)
+			r = <-c.rc
+		}
 		fmt.Println(r.TxnRes)
 	}
 }
@@ -130,6 +143,9 @@ func (c *Client) getTxn(text string) (accNum int, txn *bank.Transaction, r *mp.R
 			return 0, nil, nil, "Account Number can only be numbers!"
 		}
 	case "DEPOSIT":
+		if len(splitted) < 3 {
+			return 0, nil, nil, "This operation needs 3 inputs."
+		}
 		amount, err := strconv.Atoi(splitted[2])
 		if err == nil {
 			txn = &bank.Transaction{Op: bank.Deposit, Amount: amount}
@@ -141,6 +157,9 @@ func (c *Client) getTxn(text string) (accNum int, txn *bank.Transaction, r *mp.R
 			return 0, nil, nil, "Account Number can only be numbers!"
 		}
 	case "WITHDRAW":
+		if len(splitted) < 3 {
+			return 0, nil, nil, "This operation needs 3 inputs."
+		}
 		amount, err := strconv.Atoi(splitted[2])
 		if err == nil {
 			txn = &bank.Transaction{Op: bank.Withdrawal, Amount: amount}
@@ -164,7 +183,9 @@ func (c *Client) getTxn(text string) (accNum int, txn *bank.Transaction, r *mp.R
 			}
 			ips[i] = addr
 		}
-		r = &mp.Reconfig{Ips: strings.Join(ipss, " ")}
+		r = &mp.Reconfig{Ips: ips, ConfigID: c.configId + 1}
+	case "DEBUG":
+		return 0, nil, nil, fmt.Sprintf("Own ip: %v, %s\nServers: %v", c.selfAddress.IP, c.id, c.servers)
 	default:
 		return 0, nil, nil, "Operation can only be: Balance, Deposit, or Withdraw"
 	}
@@ -174,9 +195,13 @@ func (c *Client) getTxn(text string) (accNum int, txn *bank.Transaction, r *mp.R
 func (c *Client) handleResponse() {
 	for {
 		msg := <-c.lc
-		if msg.Tp == nt.Servers{
+		if msg.Tp == nt.Servers {
+			c.debug(1, "Recieved servers message: ", msg)
 			c.servers = msg.Servers
-		} else{
+			if msg.ConfigID > c.configId {
+				c.configId = msg.ConfigID
+			}
+		} else {
 			c.rc <- msg.Response
 		}
 	}

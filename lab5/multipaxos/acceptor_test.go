@@ -34,7 +34,7 @@ func TestMPHandlePrepareAndAccept(t *testing.T) {
 					t.Errorf("\nHandleAccept\ntest nr:%d\naction nr: %d\naction description: %s\nwant %v\ngot no output",
 						i+1, j+1, action.desc, action.wantLrn)
 				case action.wantOutput && gotOutput:
-					if gotLrn != action.wantLrn {
+					if !gotLrn.Equals(action.wantLrn) {
 						t.Errorf("\nHandleAccept\ntest nr:%d\naction nr: %d\naction description: %s\nwant:\t%v\ngot:\t%v",
 							i+1, j+1, action.desc, action.wantLrn, gotLrn)
 					}

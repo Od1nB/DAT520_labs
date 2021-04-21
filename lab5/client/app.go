@@ -51,7 +51,7 @@ var (
 		0,
 		"Debug level. Default is 0. 1 for info, 2 for all messages.",
 	)
-	startServer = flag.String (
+	startServer = flag.String(
 		"s",
 		"192.168.1.1",
 		"Start ip used for connecting to servers",
@@ -71,6 +71,7 @@ func main() {
 		flag.Usage()
 		os.Exit(0)
 	}
+	time.Sleep(1 * time.Second)
 	rand.Seed(time.Now().Unix())
 	myport := 20000 + *id // + myID
 	clientID := fmt.Sprintf("%s:%d", *ip, myport)

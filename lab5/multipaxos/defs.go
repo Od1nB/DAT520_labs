@@ -3,6 +3,7 @@ package multipaxos
 import (
 	bank "dat520/lab5/bank"
 	"fmt"
+	"net"
 )
 
 // Type definitions - DO NOT EDIT
@@ -35,32 +36,45 @@ const NoRound Round = -1
 //
 // Msg: String message
 type Value struct {
+	UniqueID   string
 	ClientID   string
 	ClientSeq  int
 	Noop       bool
 	AccountNum int
 	Txn        bank.Transaction
-	Reconfig   Reconfig
+	Reconfig   *Reconfig
 }
 
 type Reconfig struct {
-	Ips      string
-	Accounts string
+	ConfigID int
+	Ips      []*net.UDPAddr
+	Accounts map[int]*bank.Account
 	Adu      SlotID
 	Include  bool
 }
 
 func (r Reconfig) String() string {
-	return fmt.Sprintf("Ips: %v, Accounts: %v, Adu: %d, Include: %v", r.Ips, r.Accounts, r.Adu, r.Include)
+	return fmt.Sprintf("Reconfig{ID: %d, Ips: %v, Accounts: %v, Adu: %d, Include: %v}", r.ConfigID, r.Ips, r.Accounts, r.Adu, r.Include)
+}
+
+func (v Value) Equals(ov Value) bool {
+	return v.UniqueID == ov.UniqueID &&
+		v.ClientID == ov.ClientID &&
+		v.ClientSeq == ov.ClientSeq &&
+		v.Noop == ov.Noop &&
+		v.AccountNum == ov.AccountNum &&
+		v.Txn == ov.Txn &&
+		((v.Reconfig == nil && ov.Reconfig == nil) ||
+			v.Reconfig.ConfigID == ov.Reconfig.ConfigID)
 }
 
 // String returns a string representation of value v.
 func (v Value) String() string {
 	if v.Noop {
-		return fmt.Sprintf("No-op value")
+		return "No-op value"
 	}
-	return fmt.Sprintf("Value{ClientID: %s, ClientSeq: %d, Account number: %d, Transaction: %s, Reconfig: %s}",
-		v.ClientID, v.ClientSeq, v.AccountNum, v.Txn, v.Reconfig)
+	return fmt.Sprintf("Value{ID: %s, ClientID: %s, ClientSeq: %d, Account number: %d, Transaction: %s, Reconfig: %s}",
+		v.UniqueID, v.ClientID, v.ClientSeq, v.AccountNum, v.Txn, v.Reconfig)
 }
 
 // Response represents a response that can be chosen using the Multi-Paxos algorithm and
@@ -140,6 +154,13 @@ type Learn struct {
 	Val  Value
 }
 
+func (l *Learn) Equals(ol Learn) bool {
+	return l.From == ol.From &&
+		l.Slot == ol.Slot &&
+		l.Rnd == ol.Rnd &&
+		l.Val.Equals(ol.Val)
+}
+
 // String returns a string representation of learn l.
 func (l Learn) String() string {
 	return fmt.Sprintf("Learn{From: %d, Slot: %d, Rnd: %d, Val: %v}", l.From, l.Slot, l.Rnd, l.Val)
@@ -163,16 +184,37 @@ type DecidedValue struct {
 
 var (
 	testingValueOne = Value{
+		UniqueID:   "0",
 		ClientID:   "1234",
 		ClientSeq:  42,
 		AccountNum: 1,
 	}
 	testingValueTwo = Value{
+		UniqueID:   "1",
 		ClientID:   "5678",
 		ClientSeq:  99,
 		AccountNum: 2,
 	}
 	testingValueThree = Value{
+		UniqueID:   "2",
+		ClientID:   "1369",
+		ClientSeq:  4,
+		AccountNum: 3,
+	}
+	testingValueOne2 = Value{
+		UniqueID:   "02",
+		ClientID:   "1234",
+		ClientSeq:  42,
+		AccountNum: 1,
+	}
+	testingValueTwo2 = Value{
+		UniqueID:   "12",
+		ClientID:   "5678",
+		ClientSeq:  99,
+		AccountNum: 2,
+	}
+	testingValueThree2 = Value{
+		UniqueID:   "22",
 		ClientID:   "1369",
 		ClientSeq:  4,
 		AccountNum: 3,

@@ -1,18 +1,22 @@
 package multipaxos
 
-import "fmt"
+import (
+	"sync"
+)
 
 // Learner represents a learner as defined by the Multi-Paxos algorithm.
 type Learner struct {
-	id         int
-	nrNodes    int
-	slotMap    map[SlotID][]Learn
-	rnd        Round
-	fromsMap   map[SlotID][]bool
-	decidedOut chan<- DecidedValue
-	stopIn     chan struct{}
-	learnIn    chan Learn
-	quorum     int
+	id          int
+	nrNodes     int
+	slotMap     map[SlotID][]Learn
+	rnd         Round
+	fromsMap    map[SlotID][]bool
+	decidedOut  chan<- DecidedValue
+	stopIn      chan struct{}
+	learnIn     chan Learn
+	quorum      int
+	decidedVals map[string]Value
+	mux         sync.Locker
 }
 
 // NewLearner returns a new Multi-Paxos learner. It takes the
@@ -26,15 +30,17 @@ type Learner struct {
 // i.e. decided by the Paxos nodes.
 func NewLearner(id int, nrOfNodes int, decidedOut chan<- DecidedValue) *Learner {
 	return &Learner{
-		id:         id,
-		nrNodes:    nrOfNodes,
-		slotMap:    make(map[SlotID][]Learn),
-		rnd:        NoRound,
-		fromsMap:   make(map[SlotID][]bool),
-		decidedOut: decidedOut,
-		stopIn:     make(chan struct{}),
-		learnIn:    make(chan Learn),
-		quorum:     nrOfNodes/2 + 1,
+		id:          id,
+		nrNodes:     nrOfNodes,
+		slotMap:     make(map[SlotID][]Learn),
+		rnd:         NoRound,
+		fromsMap:    make(map[SlotID][]bool),
+		decidedOut:  decidedOut,
+		stopIn:      make(chan struct{}, 8),
+		learnIn:     make(chan Learn, 2048),
+		quorum:      nrOfNodes/2 + 1,
+		decidedVals: make(map[string]Value),
+		mux:         &sync.Mutex{},
 	}
 }
 
@@ -43,16 +49,18 @@ func NewLearner(id int, nrOfNodes int, decidedOut chan<- DecidedValue) *Learner 
 func (l *Learner) Start() {
 	go func() {
 		for {
+			l.mux.Lock()
 			select {
 			case lrn := <-l.learnIn:
 				val, sid, output := l.handleLearn(lrn)
-				fmt.Println("Decided: ", val, sid, output)
 				if output {
 					l.decidedOut <- DecidedValue{SlotID: sid, Value: val}
 				}
 			case <-l.stopIn:
+				l.mux.Unlock()
 				return
 			}
+			l.mux.Unlock()
 		}
 	}()
 }
@@ -73,6 +81,11 @@ func (l *Learner) DeliverLearn(lrn Learn) {
 // slot that was decided and val contain the decided value. If handleLearn
 // returns false as output, then val and sid will have their zero value.
 func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) {
+	if l.nrNodes <= learn.From {
+		// fmt.Println("NrNodes: ", l.nrNodes)
+		// fmt.Println("Dropped learn: ", learn)
+		return Value{}, 0, false
+	}
 	if l.rnd < learn.Rnd {
 		l.rnd = learn.Rnd
 		l.slotMap = make(map[SlotID][]Learn)
@@ -89,18 +102,28 @@ func (l *Learner) handleLearn(learn Learn) (val Value, sid SlotID, output bool) 
 		l.fromsMap[learn.Slot][learn.From] = true
 	}
 	for k, slt := range l.slotMap {
-		vals := make(map[Value]int)
+		vals := make(map[string]int)
 		for _, lrs := range slt {
-			vals[lrs.Val]++
+			vals[lrs.Val.UniqueID]++
 		}
-		fmt.Println(len(vals))
-		for v, i := range vals {
-			if i >= l.quorum {
+		v := 0
+		for uid, i := range vals {
+			if _, ok := l.decidedVals[uid]; !ok && i >= l.quorum {
+				val := slt[v].Val
 				delete(l.slotMap, k)
 				delete(l.fromsMap, k)
-				return v, k, true
+				l.decidedVals[val.UniqueID] = val
+				return val, k, true
+			}
+			v++
+			if _, ok := l.decidedVals[uid]; ok {
+				delete(l.slotMap, k)
+				delete(l.fromsMap, k)
 			}
 		}
 	}
+	// fmt.Println("Learn but no return.", l.quorum, learn)
+	// fmt.Println("Round learner: ", l.rnd, "\tRound learn msg:", learn.Rnd, learn.Val.UniqueID)
+	// fmt.Println("Decided values: ", l.decidedVals)
 	return Value{}, 0, false
 }

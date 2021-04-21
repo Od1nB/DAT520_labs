@@ -3,6 +3,8 @@ package multipaxos
 import (
 	"container/list"
 	"dat520/lab3/leaderdetector"
+	"fmt"
+	"sync"
 	"time"
 )
 
@@ -33,10 +35,14 @@ type Proposer struct {
 	promiseIn  chan Promise
 	cvalIn     chan Value
 
-	stopwait bool
+	// stopwait bool
 
 	incDcd chan struct{}
 	stop   chan struct{}
+
+	configID int
+
+	mux sync.Mutex
 }
 
 // NewProposer returns a new Multi-Paxos proposer. It takes the following
@@ -56,7 +62,7 @@ type Proposer struct {
 //
 // The proposer's internal crnd field should initially be set to the value of
 // its id.
-func NewProposer(id, nrOfNodes, adu int, ld leaderdetector.LeaderDetector, prepareOut chan<- Prepare, acceptOut chan<- Accept) *Proposer {
+func NewProposer(id, nrOfNodes, adu, configID int, ld leaderdetector.LeaderDetector, prepareOut chan<- Prepare, acceptOut chan<- Accept) *Proposer {
 	return &Proposer{
 		id:     id,
 		quorum: (nrOfNodes / 2) + 1,
@@ -83,6 +89,9 @@ func NewProposer(id, nrOfNodes, adu int, ld leaderdetector.LeaderDetector, prepa
 
 		incDcd: make(chan struct{}),
 		stop:   make(chan struct{}),
+
+		configID: configID,
+		mux:      sync.Mutex{},
 	}
 }
 
@@ -94,7 +103,9 @@ func (p *Proposer) Start() {
 			select {
 			case prm := <-p.promiseIn:
 				accepts, output := p.handlePromise(prm)
+				p.mux.Lock()
 				if !output {
+					p.mux.Unlock()
 					continue
 				}
 				p.nextSlot = p.adu + 1
@@ -103,42 +114,58 @@ func (p *Proposer) Start() {
 				for _, acc := range accepts {
 					p.acceptsOut.PushBack(acc)
 				}
+				p.mux.Unlock()
 				p.sendAccept()
 			case cval := <-p.cvalIn:
+				p.mux.Lock()
+
 				if p.id != p.leader {
+					p.mux.Unlock()
+
 					continue
 				}
-				if p.stopwait {
-					cval.Noop = true
-				}
+
 				p.requestsIn.PushBack(cval)
 				if !p.phaseOneDone {
+					p.mux.Unlock()
+
 					continue
 				}
+				p.mux.Unlock()
+
 				p.sendAccept()
 			case <-p.incDcd:
+				p.mux.Lock()
+
 				p.adu++
 				if p.id != p.leader {
+					p.mux.Unlock()
+
 					continue
 				}
 				if !p.phaseOneDone {
+					p.mux.Unlock()
+
 					continue
 				}
+				p.mux.Unlock()
+
 				p.sendAccept()
 			case <-p.phaseOneProgressTicker.C:
+				p.mux.Lock()
 				if p.id == p.leader && !p.phaseOneDone {
 					p.startPhaseOne()
 				}
+				p.mux.Unlock()
 			case leader := <-trustMsgs:
+				p.mux.Lock()
 				p.leader = leader
 				if leader == p.id {
 					p.startPhaseOne()
 				}
+				p.mux.Unlock()
 			case <-p.stop:
-				if p.stopwait {
-					return
-				}
-				p.stopwait = true
+				return
 			}
 		}
 	}()
@@ -175,6 +202,8 @@ func (p *Proposer) GetAlreadyDecidedUpTo() SlotID {
 // accept messages. If handlePromise returns false as output, then accs will be
 // a nil slice.
 func (p *Proposer) handlePromise(prm Promise) (accs []Accept, output bool) {
+	p.mux.Lock()
+	defer p.mux.Unlock()
 	if prm.Rnd == p.crnd && p.isUnique(prm.From) {
 		p.promiseCount++
 		p.promises = append(p.promises, &prm)
@@ -206,6 +235,8 @@ func (p *Proposer) startPhaseOne() {
 // value from the client request queue if not empty. It does not send an accept
 // if the previous slot has not been decided yet.
 func (p *Proposer) sendAccept() {
+	p.mux.Lock()
+	defer p.mux.Unlock()
 	const alpha = 1
 	if !(p.nextSlot <= p.adu+alpha) {
 		// We must wait for the next slot to be decided before we can
@@ -232,6 +263,7 @@ func (p *Proposer) sendAccept() {
 	// accept.
 	if p.requestsIn.Len() > 0 {
 		cval := p.requestsIn.Front().Value.(Value)
+		cval.UniqueID = fmt.Sprintf("%d.%d.%d", p.id, p.configID, p.nextSlot)
 		p.requestsIn.Remove(p.requestsIn.Front())
 		acc := Accept{
 			From: p.id,
